@@ -234,7 +234,123 @@
        // 호출마다 새로운 DOM을 반환한다. 제공 UI가 이전 DOM을 교체한다.
        return root;
      },
-     renderDecision() { return '학생 구현 대기: 서버의 판정과 이유를 연결하세요.'; },
+     renderDecision({ status, mode, data, error, appId } = {}) {
+       const root = document.createElement('section');
+       root.className = 'student-decision-view';
+
+       const modeLabels = {
+         connected: '연결됨',
+         demo: '예제 데이터(demo) · 실제 연결 아님',
+         disconnected: '연결 없음',
+         unknown: '연결 상태 확인 불가',
+       };
+       const decisionLabels = {
+         allow: '접근 허용(allow)',
+         deny: '접근 차단(deny)',
+         challenge: '추가 확인 필요(challenge)',
+         unknown: '판정 불명(unknown)',
+       };
+       const decisionNotes = {
+         allow: '서버가 선택한 앱의 접근을 허용했습니다.',
+         deny: '서버가 선택한 앱의 접근을 차단했습니다.',
+         challenge: '서버가 추가 확인을 요구했습니다.',
+         unknown: '판정을 확인할 수 없습니다. 허용으로 간주하지 마세요.',
+       };
+       const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+       const heading = document.createElement('h3');
+       heading.textContent = '선택한 업무 앱 접근 판정';
+       root.append(heading);
+
+       function addMessage(text, className, role) {
+         const message = document.createElement('p');
+         message.className = className;
+         if (role) message.setAttribute('role', role);
+         message.textContent = text;
+         root.append(message);
+         return message;
+       }
+
+       function addPair(list, label, value) {
+         const term = document.createElement('dt');
+         term.textContent = label;
+         const detail = document.createElement('dd');
+         detail.textContent = value;
+         list.append(term, detail);
+       }
+
+       function addContext(details) {
+         if (typeof appId === 'string' && appId.length > 0) addPair(details, '선택한 앱 ID', appId);
+         if (typeof mode === 'string') {
+           const label = Object.hasOwn(modeLabels, mode) ? modeLabels[mode] : '확인 불가 (' + mode + ')';
+           addPair(details, '데이터 연결 상태', label);
+         }
+       }
+
+       if (status === 'idle') {
+         addMessage('업무 앱 하나를 선택하고 접근 요청을 실행하세요.', 'state state-empty', 'status');
+         return root;
+       }
+
+       if (status === 'loading') {
+         addMessage('선택한 앱의 접근 판정을 확인하는 중입니다…', 'state state-loading', 'status');
+         const details = document.createElement('dl');
+         details.className = 'decision-details';
+         addContext(details);
+         if (details.childNodes.length > 0) root.append(details);
+         return root;
+       }
+
+       if (status === 'error') {
+         const failure = isRecord(error) ? error : {};
+         const code = typeof failure.code === 'string' && failure.code.length > 0 ? ' (' + failure.code + ')' : '';
+         const message = typeof failure.message === 'string' && failure.message.length > 0
+           ? failure.message
+           : '서버에서 오류 내용을 제공하지 않았습니다.';
+         addMessage('판정 요청 실패' + code + ' · 접근 거부 판정이 아닙니다: ' + message, 'state state-error', 'alert');
+         const details = document.createElement('dl');
+         details.className = 'decision-details';
+         addContext(details);
+         if (details.childNodes.length > 0) root.append(details);
+         return root;
+       }
+
+       if (status !== 'ok') {
+         addMessage('확인 불가(unknown): 접근을 허용으로 간주하지 마세요.', 'state state-error', 'alert');
+         const details = document.createElement('dl');
+         details.className = 'decision-details';
+         addContext(details);
+         if (details.childNodes.length > 0) root.append(details);
+         return root;
+       }
+
+       const result = isRecord(data) ? data : {};
+       const decision = typeof result.decision === 'string' ? result.decision : '';
+       const matchesSelectedApp = typeof appId === 'string' && appId.length > 0 && result.appId === appId;
+       const knownDecision = Object.hasOwn(decisionLabels, decision);
+       const canShowDecision = matchesSelectedApp && knownDecision;
+       const displayedDecision = canShowDecision ? decisionLabels[decision] : '확인 불가(unknown)';
+       addMessage(displayedDecision, canShowDecision && decision === 'allow' ? 'decision decision-allow' : 'decision decision-unverified', canShowDecision && decision !== 'unknown' ? 'status' : 'alert');
+       if (!matchesSelectedApp) {
+         addMessage('응답이 선택한 앱과 일치하지 않아 판정을 표시하지 않습니다.', 'muted', null);
+       } else if (!knownDecision) {
+         addMessage('허용·차단·추가 확인 중 하나로 해석할 수 없는 판정입니다. 허용으로 간주하지 마세요.', 'muted', null);
+       } else {
+         addMessage(decisionNotes[decision], 'muted', null);
+       }
+
+       const details = document.createElement('dl');
+       details.className = 'decision-details';
+       addContext(details);
+       const reason = typeof result.reason === 'string' && result.reason.length > 0 ? result.reason : '사유 정보 없음';
+       const checkedAt = typeof result.checkedAt === 'string' && Number.isFinite(Date.parse(result.checkedAt))
+         ? result.checkedAt
+         : '판정 시각 확인 불가';
+       addPair(details, '판정 이유', reason);
+       addPair(details, '판정 시각', checkedAt);
+       if (!canShowDecision) addPair(details, '원본 판정 코드', decision || 'unknown');
+       root.append(details);
+       return root;
+     },
      renderEvents() { return '학생 구현 대기: 본인 접속·XDR 기록을 연결하세요.'; },
      renderStatus() { return '학생 구현 대기: 기기·세션·알림과 연결 점검 상태를 구분하세요.'; },
      renderVulnerabilities() { return '학생 구현 대기: 정확한 설치 버전·OSV 출처·조회 시각·부분 결과·조회 실패를 구분하세요.'; },
