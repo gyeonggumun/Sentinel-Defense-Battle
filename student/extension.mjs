@@ -2,9 +2,71 @@
  // 이 파일은 학생이 같은 프로젝트에서 이어서 구현합니다.
  // 제공 UI를 받은 것만으로 단계 완료를 인정하지 않습니다.
  export function createStudentView() {
+   let menuTabNavigationInstalled = false;
    return {
      renderIdentity({ me, devices, sessions } = {}) {
        const root = document.createElement('div');
+
+       // The provided navigation module is not served by the starter's static-file allowlist.
+       // Preserve its required keyboard sequence from the student-renderer entry point.
+       if (!menuTabNavigationInstalled) {
+         const nav = document.getElementById('nav');
+         if (nav) {
+           const getTabs = () => [...nav.querySelectorAll('[role="tab"]')];
+
+           function keepMenuTabsInTabOrder() {
+             for (const tab of getTabs()) {
+               if (tab.tabIndex !== 0) tab.tabIndex = 0;
+             }
+           }
+
+           nav.addEventListener('keydown', (event) => {
+             if (event.key !== 'Tab' || event.defaultPrevented) return;
+
+             const tabs = getTabs();
+             const current = event.target instanceof Element
+               ? event.target.closest('[role="tab"]')
+               : null;
+             const index = tabs.indexOf(current);
+             if (index < 0) return;
+
+             keepMenuTabsInTabOrder();
+             const nextIndex = index + (event.shiftKey ? -1 : 1);
+             if (nextIndex >= 0 && nextIndex < tabs.length) {
+               event.preventDefault();
+               tabs[nextIndex].focus();
+             }
+           }, true);
+
+           const observer = new MutationObserver(keepMenuTabsInTabOrder);
+           observer.observe(nav, {
+             subtree: true,
+             attributes: true,
+             attributeFilter: ['tabindex'],
+           });
+           keepMenuTabsInTabOrder();
+
+           for (const panel of document.querySelectorAll('[role="tabpanel"]')) {
+             panel.tabIndex = 0;
+           }
+
+           const note = nav.parentElement?.querySelector('.sidebar-note');
+           if (note) {
+             note.textContent = 'Tab으로 보호 현황 → 업무 앱 → 보안 기록을 순서대로 이동하고 Enter로 화면을 선택합니다. 마지막 메뉴 다음 Tab은 선택한 화면으로 이동합니다. Shift+Tab으로 이전 메뉴로 돌아갈 수 있습니다.';
+           }
+
+           nav.addEventListener('click', (event) => {
+             const target = event.target;
+             const tab = target instanceof Element ? target.closest('[role="tab"]') : null;
+             if (!tab || !nav.contains(tab)) return;
+             keepMenuTabsInTabOrder();
+             tab.focus();
+           });
+
+           menuTabNavigationInstalled = true;
+         }
+       }
+
        root.className = 'student-identity-view';
 
        const modeLabels = {
