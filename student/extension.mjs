@@ -359,7 +359,297 @@
        root.append(details);
        return root;
      },
-     renderEvents() { return '학생 구현 대기: 본인 접속·XDR 기록을 연결하세요.'; },
+     renderEvents({ status, mode, data, error } = {}) {
+       const root = document.createElement('section');
+       root.className = 'student-events-view';
+
+       const modeLabels = {
+         connected: '연결됨',
+         demo: '예제 자료(demo) · 실제 연결 아님',
+         disconnected: '연결 없음',
+         unknown: '연결 상태 확인 불가',
+       };
+       const kindLabels = {
+         access: '접속 기록(access)',
+         xdr: 'XDR 경보(xdr)',
+       };
+       const stateLabels = {
+         access: { allowed: '허용됨', denied: '거부됨', unknown: '확인 불가' },
+         session: { active: '활성', expired: '만료', revoked: '회수됨', unknown: '확인 불가' },
+         device: { compliant: '보안 기준 충족', noncompliant: '보안 기준 미충족', unknown: '확인 불가' },
+       };
+       const heading = document.createElement('h3');
+       heading.textContent = '최근 보안 기록';
+       root.append(heading);
+
+       const modeLabel = typeof mode === 'string' && Object.hasOwn(modeLabels, mode)
+         ? modeLabels[mode]
+         : mode === undefined || mode === null ? null : '확인 불가 (' + String(mode) + ')';
+       if (modeLabel) {
+         const modeNote = document.createElement('p');
+         modeNote.className = 'muted';
+         modeNote.textContent = '데이터 연결 상태: ' + modeLabel;
+         root.append(modeNote);
+       }
+
+       const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+       const textValue = (value, fallback = '정보 없음') =>
+         typeof value === 'string' && value.length > 0 ? value : fallback;
+       const stateValue = (kind, value) => {
+         const raw = typeof value === 'string' && value.length > 0 ? value : 'unknown';
+         const label = Object.hasOwn(stateLabels[kind], raw) ? stateLabels[kind][raw] : '확인 불가';
+         return raw === 'unknown' ? '확인 불가(unknown)' : label + '(' + raw + ')';
+       };
+       const timeValue = (value) => {
+         if (typeof value !== 'string' || value.length === 0) return '시각 정보 없음';
+         const date = new Date(value);
+         return Number.isNaN(date.getTime()) ? value : date.toLocaleString('ko-KR');
+       };
+
+       if (status === 'idle' || status === 'loading') {
+         const message = document.createElement('p');
+         message.className = 'state state-loading';
+         message.setAttribute('role', 'status');
+         message.textContent = status === 'idle' ? '보안 기록을 불러오지 않았습니다.' : '보안 기록을 불러오는 중입니다…';
+         root.append(message);
+         return root;
+       }
+
+       if (status === 'error') {
+         const failure = isRecord(error) ? error : {};
+         const detail = typeof failure.message === 'string' && failure.message.length > 0
+           ? failure.message
+           : '오류 내용을 확인할 수 없습니다.';
+         const message = document.createElement('p');
+         message.className = 'state state-error';
+         message.setAttribute('role', 'alert');
+         if (failure.code === 'CONTRACT_MISMATCH' || failure.code === 'ENGINE_RESULT_UNVERIFIED') {
+           message.textContent = '확인 불가: 기록 응답을 검증하지 못했습니다. ' + detail + ' 이전 기록은 표시하지 않습니다.';
+         } else {
+           message.textContent = '기록을 불러오지 못했습니다: ' + detail;
+         }
+         root.append(message);
+         return root;
+       }
+
+       if (status !== 'ok') {
+         const message = document.createElement('p');
+         message.className = 'state state-error';
+         message.setAttribute('role', 'alert');
+         message.textContent = '확인 불가: 보안 기록 상태를 확인할 수 없습니다.';
+         root.append(message);
+         return root;
+       }
+
+       if (!Array.isArray(data)) {
+         const message = document.createElement('p');
+         message.className = 'state state-error';
+         message.setAttribute('role', 'alert');
+         message.textContent = '확인 불가: 기록 응답 형식을 확인할 수 없습니다.';
+         root.append(message);
+         return root;
+       }
+
+       const records = [...data];
+       const timeNumber = (value) => {
+         const time = typeof value === 'string' ? Date.parse(value) : NaN;
+         return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
+       };
+       records.sort((left, right) => timeNumber(right?.at) - timeNumber(left?.at));
+       const filters = { kind: 'all', appId: 'all', access: 'all' };
+       let selectedEventId = null;
+
+       function addPair(list, label, value) {
+         const term = document.createElement('dt');
+         term.textContent = label;
+         const detail = document.createElement('dd');
+         detail.textContent = value;
+         list.append(term, detail);
+       }
+
+       function uniqueValues(getValue) {
+         return [...new Set(records.map(getValue).filter(value => typeof value === 'string' && value.length > 0))];
+       }
+
+       const filterGroup = document.createElement('div');
+       filterGroup.className = 'row';
+       const listContainer = document.createElement('div');
+       listContainer.className = 'student-event-list';
+       const detailContainer = document.createElement('div');
+       detailContainer.className = 'student-event-detail';
+       root.append(filterGroup, listContainer, detailContainer);
+
+       function makeFilter(labelText, id, key, values, optionLabel) {
+         const label = document.createElement('label');
+         label.textContent = labelText;
+         const select = document.createElement('select');
+         select.id = id;
+         select.setAttribute('aria-label', labelText);
+         const allOption = document.createElement('option');
+         allOption.value = 'all';
+         allOption.textContent = '전체';
+         select.append(allOption);
+         for (const value of values) {
+           const option = document.createElement('option');
+           option.value = value;
+           option.textContent = optionLabel(value);
+           select.append(option);
+         }
+         label.append(select);
+         filterGroup.append(label);
+         select.addEventListener('change', () => {
+           filters[key] = select.value;
+           selectedEventId = null;
+           renderList();
+         });
+       }
+
+       makeFilter('기록 종류', 'student-event-kind-filter', 'kind', uniqueValues(event => event?.kind),
+         value => Object.hasOwn(kindLabels, value) ? kindLabels[value] : '확인 불가 (' + value + ')');
+       makeFilter('업무 앱', 'student-event-app-filter', 'appId', uniqueValues(event => event?.appId), value => value);
+       makeFilter('접속 상태', 'student-event-access-filter', 'access', uniqueValues(event => event?.state?.access),
+         value => stateValue('access', value));
+
+       function filterRecords() {
+         return records.filter(event => isRecord(event)
+           && (filters.kind === 'all' || event.kind === filters.kind)
+           && (filters.appId === 'all' || event.appId === filters.appId)
+           && (filters.access === 'all' || event.state?.access === filters.access));
+       }
+
+       function renderEntries(title, entries) {
+         const section = document.createElement('section');
+         section.className = 'event-block';
+         const subheading = document.createElement('h4');
+         subheading.textContent = title;
+         section.append(subheading);
+         const list = document.createElement('ul');
+         if (!Array.isArray(entries) || entries.length === 0) {
+           const empty = document.createElement('li');
+           empty.textContent = '없음';
+           list.append(empty);
+         } else {
+           for (const entry of entries) {
+             const item = document.createElement('li');
+             const identifier = document.createElement('strong');
+             identifier.textContent = 'ID: ' + textValue(entry?.id);
+             const text = document.createElement('span');
+             text.textContent = ' · ' + textValue(entry?.text);
+             item.append(identifier, text);
+             list.append(item);
+           }
+         }
+         section.append(list);
+         return section;
+       }
+
+       function renderDetail(event) {
+         const eventId = textValue(event.id, 'unknown');
+         const detail = document.createElement('section');
+         detail.className = 'event event-detail';
+         detail.setAttribute('data-student-event-detail', eventId);
+         const title = document.createElement('h3');
+         title.textContent = eventId + ' 상세';
+         detail.append(title);
+
+         const identity = document.createElement('dl');
+         identity.className = 'kv';
+         addPair(identity, '사건 ID', eventId);
+         addPair(identity, '업무 앱', textValue(event.appId, '앱을 확인할 수 없음(appId 없음)'));
+         detail.append(identity);
+
+         const evidence = renderEntries('근거(evidence)', event.evidence);
+         const rules = renderEntries('규칙(rules)', event.rules);
+         detail.append(evidence, rules);
+
+         const states = document.createElement('section');
+         states.className = 'event-block';
+         const statesTitle = document.createElement('h4');
+         statesTitle.textContent = '기록 당시 상태';
+         states.append(statesTitle);
+         const stateList = document.createElement('dl');
+         stateList.className = 'kv';
+         const values = isRecord(event.state) ? event.state : {};
+         addPair(stateList, '접속 상태(access)', stateValue('access', values.access));
+         addPair(stateList, '세션 상태(session)', stateValue('session', values.session));
+         addPair(stateList, '기기 상태(device)', stateValue('device', values.device));
+         states.append(stateList);
+         detail.append(states);
+         return detail;
+       }
+
+       function renderList() {
+         const visible = filterRecords();
+         listContainer.replaceChildren();
+         detailContainer.replaceChildren();
+         const count = document.createElement('p');
+         count.className = 'muted';
+         count.textContent = '받은 기록 ' + records.length + '건 중 ' + visible.length + '건 표시';
+         listContainer.append(count);
+
+         if (visible.length === 0) {
+           const empty = document.createElement('p');
+           empty.className = 'state state-empty';
+           empty.setAttribute('role', 'status');
+           empty.textContent = records.length === 0 ? '표시할 기록이 없습니다.' : '선택한 필터에 해당하는 기록이 없습니다.';
+           listContainer.append(empty);
+           return;
+         }
+
+         const list = document.createElement('ul');
+         list.className = 'records';
+         for (const event of visible) {
+           const eventId = textValue(event.id, 'unknown');
+           const row = document.createElement('li');
+           row.className = 'event';
+           row.setAttribute('data-student-event-id', eventId);
+
+           const title = document.createElement('h3');
+           title.textContent = textValue(event.summary, '요약을 확인할 수 없음');
+           row.append(title);
+           const details = document.createElement('dl');
+           details.className = 'kv';
+           const kind = typeof event.kind === 'string' && Object.hasOwn(kindLabels, event.kind)
+             ? kindLabels[event.kind]
+             : '확인 불가 (' + textValue(event.kind, 'unknown') + ')';
+           addPair(details, '사건 ID', eventId);
+           addPair(details, '시각', timeValue(event.at));
+           addPair(details, '종류', kind);
+           addPair(details, '앱', textValue(event.appId, '앱을 확인할 수 없음(appId 없음)'));
+           addPair(details, '요약', textValue(event.summary, '요약을 확인할 수 없음'));
+           row.append(details);
+
+           const actions = document.createElement('div');
+           actions.className = 'event-actions';
+           const button = document.createElement('button');
+           button.type = 'button';
+           button.className = 'btn';
+           button.textContent = eventId + ' 상세';
+           button.setAttribute('aria-label', eventId + ' 상세');
+           button.setAttribute('aria-expanded', selectedEventId === eventId ? 'true' : 'false');
+           button.addEventListener('click', () => {
+             selectedEventId = selectedEventId === eventId ? null : eventId;
+             renderList();
+             const buttons = [...listContainer.querySelectorAll('button')];
+             const activeButton = buttons.find(item => item.getAttribute('aria-label') === eventId + ' 상세');
+             if (activeButton) activeButton.focus();
+           });
+           actions.append(button);
+           row.append(actions);
+           list.append(row);
+         }
+         listContainer.append(list);
+
+         if (selectedEventId !== null) {
+           const selected = visible.find(event => event.id === selectedEventId);
+           if (selected) detailContainer.append(renderDetail(selected));
+           else selectedEventId = null;
+         }
+       }
+
+       renderList();
+       return root;
+     },
      renderStatus() { return '학생 구현 대기: 기기·세션·알림과 연결 점검 상태를 구분하세요.'; },
      renderVulnerabilities() { return '학생 구현 대기: 정확한 설치 버전·OSV 출처·조회 시각·부분 결과·조회 실패를 구분하세요.'; },
      renderAiConnection() { return '학생 구현 대기: 모델 응답 점검과 실제 사건 설명을 구분하고 AI 오류·취소·수동 복구를 안내하세요.'; },
