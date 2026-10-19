@@ -752,6 +752,13 @@
          modeNote.textContent = '연결 상태: ' + modeText(resourceMode);
          section.append(modeNote);
 
+         if (kind === 'sessions') {
+           const scope = document.createElement('p');
+           scope.className = 'muted';
+           scope.textContent = '현재 검증된 연결 한 개를 표시합니다. 지난 세션 목록이 아닙니다.';
+           section.append(scope);
+         }
+
          if (state.status === 'loading') {
            addMessage(section, title + ' 정보를 불러오는 중입니다…', 'state state-loading');
            return section;
@@ -821,16 +828,15 @@
          modeNote.textContent = '연결 상태: ' + modeText(resourceMode);
          section.append(modeNote);
 
+         let safeFields = null;
          if (state.status === 'loading') {
            addMessage(section, '진단 정보를 불러오는 중입니다…', 'state state-loading');
          } else if (state.status === 'error') {
            addMessage(section, errorMessage('진단 정보', state.error), 'state state-error', 'alert');
-         } else if (state.status !== 'ok') {
-           addMessage(section, '진단 정보 상태를 확인할 수 없습니다.', 'state state-error', 'alert');
-         } else {
+         } else if (state.status === 'ok') {
            const data = isRecord(state.data) ? state.data : {};
            const engine = isRecord(data.engine) ? data.engine : {};
-           const fields = [
+           safeFields = [
              ['requestId', safeDiagnosticValue(data.requestId)],
              ['component', safeDiagnosticValue(data.component)],
              ['version', safeDiagnosticValue(data.version)],
@@ -840,35 +846,41 @@
            ];
            const details = document.createElement('dl');
            details.className = 'identity';
-           for (const [label, value] of fields) addPair(details, label, value);
+           for (const [label, value] of safeFields) addPair(details, label, value);
            section.append(details);
-
-           const copyNote = document.createElement('p');
-           copyNote.className = 'muted';
-           copyNote.textContent = '도움 요청에 필요한 비밀 없는 진단 정보만 복사합니다.';
-           section.append(copyNote);
-
-           const copyButton = document.createElement('button');
-           copyButton.type = 'button';
-           copyButton.className = 'btn';
-           copyButton.textContent = '도움정보 복사';
-           copyButton.setAttribute('aria-label', '도움정보 복사');
-           const copyStatus = document.createElement('p');
-           copyStatus.className = 'muted';
-           copyStatus.setAttribute('role', 'status');
-           copyButton.addEventListener('click', async () => {
-             try {
-               const clipboard = globalThis.navigator?.clipboard;
-               if (!clipboard || typeof clipboard.writeText !== 'function') throw new Error('clipboard_unavailable');
-               const text = fields.map(([label, value]) => label + ': ' + value).join('\n');
-               await clipboard.writeText(text);
-               copyStatus.textContent = '도움정보를 클립보드에 복사했습니다.';
-             } catch {
-               copyStatus.textContent = '도움정보를 복사하지 못했습니다. 브라우저의 클립보드 권한을 확인하세요.';
-             }
-           });
-           section.append(copyButton, copyStatus);
+         } else {
+           addMessage(section, '진단 정보 상태를 확인할 수 없습니다.', 'state state-error', 'alert');
          }
+
+         const copyNote = document.createElement('p');
+         copyNote.className = 'muted';
+         copyNote.textContent = safeFields
+           ? '도움 요청에 필요한 비밀 없는 진단 정보만 복사합니다.'
+           : '진단 정보가 준비되면 도움 요청에 필요한 안전한 정보만 복사할 수 있습니다.';
+         section.append(copyNote);
+
+         const copyButton = document.createElement('button');
+         copyButton.type = 'button';
+         copyButton.className = 'btn';
+         copyButton.textContent = '도움정보 복사';
+         copyButton.setAttribute('aria-label', '도움정보 복사');
+         copyButton.disabled = safeFields === null;
+         const copyStatus = document.createElement('p');
+         copyStatus.className = 'muted';
+         copyStatus.setAttribute('role', 'status');
+         copyButton.addEventListener('click', async () => {
+           if (safeFields === null) return;
+           try {
+             const clipboard = globalThis.navigator?.clipboard;
+             if (!clipboard || typeof clipboard.writeText !== 'function') throw new Error('clipboard_unavailable');
+             const text = safeFields.map(([label, value]) => label + ': ' + value).join('\\n');
+             await clipboard.writeText(text);
+             copyStatus.textContent = '도움정보를 클립보드에 복사했습니다.';
+           } catch {
+             copyStatus.textContent = '도움정보를 복사하지 못했습니다. 브라우저의 클립보드 권한을 확인하세요.';
+           }
+         });
+         section.append(copyButton, copyStatus);
          return section;
        }
 
