@@ -245,16 +245,16 @@
          unknown: '연결 상태 확인 불가',
        };
        const decisionLabels = {
-         allow: '접근 허용(allow)',
-         deny: '접근 차단(deny)',
+         allow: '허용(allow)',
+         deny: '거부(deny)',
          challenge: '추가 확인 필요(challenge)',
-         unknown: '판정 불명(unknown)',
+         unknown: '확인 불가(unknown)',
        };
        const decisionNotes = {
          allow: '서버가 선택한 앱의 접근을 허용했습니다.',
-         deny: '서버가 선택한 앱의 접근을 차단했습니다.',
-         challenge: '서버가 추가 확인을 요구했습니다.',
-         unknown: '판정을 확인할 수 없습니다. 허용으로 간주하지 마세요.',
+         deny: '서버가 선택한 앱의 접근을 거부했습니다.',
+         challenge: '서버가 추가 확인을 요구했습니다. 이 화면은 확인 절차를 대신 수행하지 않습니다.',
+         unknown: '서버가 판정을 확인하지 못했습니다. 허용으로 간주하지 마세요.',
        };
        const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
        const heading = document.createElement('h3');
@@ -267,7 +267,6 @@
          if (role) message.setAttribute('role', role);
          message.textContent = text;
          root.append(message);
-         return message;
        }
 
        function addPair(list, label, value) {
@@ -287,12 +286,14 @@
        }
 
        if (status === 'idle') {
+         root.dataset.decision = 'none';
          addMessage('업무 앱 하나를 선택하고 접근 요청을 실행하세요.', 'state state-empty', 'status');
          return root;
        }
 
        if (status === 'loading') {
-         addMessage('선택한 앱의 접근 판정을 확인하는 중입니다…', 'state state-loading', 'status');
+         root.dataset.decision = 'pending';
+         addMessage('선택한 앱의 판정을 확인하는 중입니다…', 'state state-loading', 'status');
          const details = document.createElement('dl');
          details.className = 'decision-details';
          addContext(details);
@@ -301,12 +302,13 @@
        }
 
        if (status === 'error') {
+         root.dataset.decision = 'request-failed';
          const failure = isRecord(error) ? error : {};
          const code = typeof failure.code === 'string' && failure.code.length > 0 ? ' (' + failure.code + ')' : '';
          const message = typeof failure.message === 'string' && failure.message.length > 0
            ? failure.message
            : '서버에서 오류 내용을 제공하지 않았습니다.';
-         addMessage('판정 요청 실패' + code + ' · 접근 거부 판정이 아닙니다: ' + message, 'state state-error', 'alert');
+         addMessage('요청 실패' + code + ': ' + message + ' · 이것은 거부 판정이 아닙니다.', 'decision decision-failed', 'alert');
          const details = document.createElement('dl');
          details.className = 'decision-details';
          addContext(details);
@@ -315,7 +317,8 @@
        }
 
        if (status !== 'ok') {
-         addMessage('확인 불가(unknown): 접근을 허용으로 간주하지 마세요.', 'state state-error', 'alert');
+         root.dataset.decision = 'unknown';
+         addMessage('확인 불가(unknown): 접근을 허용으로 간주하지 마세요.', 'decision decision-unknown', 'alert');
          const details = document.createElement('dl');
          details.className = 'decision-details';
          addContext(details);
@@ -328,12 +331,17 @@
        const matchesSelectedApp = typeof appId === 'string' && appId.length > 0 && result.appId === appId;
        const knownDecision = Object.hasOwn(decisionLabels, decision);
        const canShowDecision = matchesSelectedApp && knownDecision;
-       const displayedDecision = canShowDecision ? decisionLabels[decision] : '확인 불가(unknown)';
-       addMessage(displayedDecision, canShowDecision && decision === 'allow' ? 'decision decision-allow' : 'decision decision-unverified', canShowDecision && decision !== 'unknown' ? 'status' : 'alert');
+       const displayedDecision = canShowDecision ? decision : 'unknown';
+       root.dataset.decision = displayedDecision;
+       addMessage(
+         canShowDecision ? decisionLabels[decision] : '확인 불가(unknown)',
+         'decision decision-' + displayedDecision,
+         displayedDecision === 'unknown' ? 'alert' : 'status',
+       );
        if (!matchesSelectedApp) {
          addMessage('응답이 선택한 앱과 일치하지 않아 판정을 표시하지 않습니다.', 'muted', null);
        } else if (!knownDecision) {
-         addMessage('허용·차단·추가 확인 중 하나로 해석할 수 없는 판정입니다. 허용으로 간주하지 마세요.', 'muted', null);
+         addMessage('허용·거부·추가 확인 중 하나로 해석할 수 없는 판정입니다. 허용으로 간주하지 마세요.', 'muted', null);
        } else {
          addMessage(decisionNotes[decision], 'muted', null);
        }
