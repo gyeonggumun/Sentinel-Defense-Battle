@@ -724,15 +724,14 @@
          list.append(term, detail);
        }
 
-       function errorMessage(resource, error) {
+       function errorMessage(resource, error, retryInstruction = '다시 시도는 위쪽 다시 불러오기 버튼을 직접 누르세요.') {
          const failure = isRecord(error) ? error : {};
          const code = typeof failure.code === 'string' ? failure.code : '';
          const message = valueText(failure.message, typeof error === 'string' ? error : '오류 내용을 확인할 수 없습니다.');
          const timeout = /TIME.?OUT|ETIMEDOUT|ABORT_ERR/i.test(code)
            || /시간 초과|시간이 초과|timed out|timeout/i.test(message);
          const prefix = timeout ? resource + ' 조회 시간 초과' : resource + ' 조회 실패';
-         return prefix + (code ? ' (' + code + ')' : '') + ': ' + message
-           + ' 다시 시도는 위쪽 다시 불러오기 버튼을 직접 누르세요.';
+         return prefix + (code ? ' (' + code + ')' : '') + ': ' + message + ' ' + retryInstruction;
        }
 
        function renderCollection(title, resource, kind) {
@@ -832,7 +831,18 @@
          if (state.status === 'loading') {
            addMessage(section, '진단 정보를 불러오는 중입니다…', 'state state-loading');
          } else if (state.status === 'error') {
-           addMessage(section, errorMessage('진단 정보', state.error), 'state state-error', 'alert');
+           addMessage(
+             section,
+             errorMessage('진단 정보', state.error, '다시 시도는 제공 화면의 도움정보 불러오기 버튼을 직접 누르세요.'),
+             'state state-error',
+             'alert',
+           );
+         } else if (state.status === 'idle') {
+           addMessage(
+             section,
+             '진단 정보는 아직 조회하지 않았습니다. 제공 화면의 도움정보 불러오기 버튼을 직접 누르세요.',
+             'state state-empty',
+           );
          } else if (state.status === 'ok') {
            const data = isRecord(state.data) ? state.data : {};
            const engine = isRecord(data.engine) ? data.engine : {};
