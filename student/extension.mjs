@@ -46,14 +46,12 @@ export function createStudentView() {
         heading.textContent = title;
         section.append(heading);
 
-        const current = isRecord(resource) ? resource : { status: 'error', error: { message: '자료 형식을 확인할 수 없습니다.' } };
-        const modeLabel = modeLabels[current.mode];
-        if (modeLabel) {
-          const mode = document.createElement('p');
-          mode.className = 'muted';
-          mode.textContent = `연결 상태: ${modeLabel}`;
-          section.append(mode);
-        }
+        const current = isRecord(resource) ? resource : { status: 'error', mode: 'unknown', error: { message: '자료 형식을 확인할 수 없습니다.' } };
+        const modeLabel = Object.hasOwn(modeLabels, current.mode) ? modeLabels[current.mode] : modeLabels.unknown;
+        const mode = document.createElement('p');
+        mode.className = 'muted';
+        mode.textContent = `연결 상태: ${modeLabel}`;
+        section.append(mode);
 
         if (current.status === 'loading') {
           const message = document.createElement('p');
@@ -64,13 +62,13 @@ export function createStudentView() {
         } else if (current.status === 'error') {
           const error = isRecord(current.error) ? current.error : {};
           const code = typeof error.code === 'string' ? ` (${error.code})` : '';
-          const detail = typeof error.message === 'string' && error.message.length > 0 ? `: ${error.message}` : '';
+          const detail = typeof error.message === 'string' && error.message.length > 0 ? error.message : '서버가 오류 내용을 제공하지 않았습니다.';
           const unverified = ['CONTRACT_MISMATCH', 'ENGINE_RESULT_UNVERIFIED'].includes(error.code);
           const message = document.createElement('p');
           message.className = 'state state-error';
           message.textContent = unverified
-            ? `${title} 정보를 확인할 수 없습니다${code}${detail}`
-            : `${title} 정보를 불러오지 못했습니다${code}${detail}`;
+            ? `확인 불가${code}: ${detail}`
+            : `연결 실패${code}: ${detail}`;
           section.append(message);
         } else if (current.status === 'ok') {
           if (!renderData(current.data, section)) {
