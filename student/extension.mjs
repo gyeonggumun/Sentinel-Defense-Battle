@@ -1015,7 +1015,7 @@
            WB_CLCO_CANCELLED: '점검이 취소됐습니다. 이전 결과는 현재 결과가 아닙니다.',
            MODEL_NOT_CONFIGURED: '담당자에게 사용할 AI 모델 설정을 확인해 달라고 요청하세요.',
            ON_AI_MODEL_LIST_EMPTY: '담당자에게 앱의 모델 허용 설정을 확인해 달라고 요청하세요.',
-           AI_REQUEST_UNVERIFIED: '자동 재시도는 하지 않습니다. 원인을 확인한 뒤 필요하면 잠시 후 직접 다시 점검하세요.',
+           AI_REQUEST_UNVERIFIED: '네트워크 또는 연결·응답 확인 불가일 수 있습니다. 자동 재시도는 하지 않습니다. 네트워크 상태를 확인한 뒤 잠시 후 직접 다시 점검하세요.',
          };
          addMessage(guidance[code] || guidance.AI_REQUEST_UNVERIFIED, 'muted', null);
        } else if (currentStatus === 'ok') {
