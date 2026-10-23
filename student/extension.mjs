@@ -1305,13 +1305,35 @@
          const detail = safeText(message);
          if (detail) addMessage(detail);
        }
+       const eventId = safeText(event?.id);
+       const requestId = safeText(receipt?.requestId);
+       if (eventId !== null) root.setAttribute('data-student-action-event', eventId);
+       if (requestId !== null) root.setAttribute('data-student-action-request', requestId);
+       const details = document.createElement('dl');
+       details.className = 'student-action-details';
+       addPair(details, '사건 ID(event.id)', eventId);
+       const evidenceIds = Array.isArray(event?.evidence)
+         ? event.evidence.map(row => safeText(row?.id)).filter(id => id !== null)
+         : [];
+       if (evidenceIds.length > 0) addPair(details, '근거 ID(event.evidence)', evidenceIds.join(', '));
+       addPair(details, '조치 ID(actionId)', safeText(actionId));
+       addPair(details, '실제 대상 ID(target.id)', safeText(target?.id));
+       if (Number.isSafeInteger(target?.generation)) addPair(details, '대상 세대(generation)', String(target.generation));
+       addPair(details, '요청 ID(requestId)', requestId);
+       addPair(details, '접수 ID(receiptId)', safeText(receipt?.receiptId));
+       if (Number.isSafeInteger(receipt?.version)) addPair(details, '결과 버전(version)', String(receipt.version));
+       if (typeof receipt?.replayed === 'boolean') addPair(details, '중복 요청 응답(replayed)', String(receipt.replayed));
+       addPair(details, '사람 확인 기한(confirmationExpiresAt)', safeText(confirmationExpiresAt));
+       root.append(details);
+       if (receipt?.replayed === true) {
+         addMessage('동일 요청의 재응답입니다. 추가 집행을 요청하지 말고 결과만 재조회하세요.');
+       }
        if (confirmed) {
          addMessage('연동 시스템에서 조회한 결과로 실제 효과를 확인했습니다.');
          const observed = document.createElement('dl');
          observed.className = 'student-action-observation';
          addPair(observed, '관측 시각(observedAt)', safeText(observation.observedAt));
          addPair(observed, '효과 관측', 'effectApplied: true');
-         addPair(observed, '접수 ID(receiptId)', safeText(receipt?.receiptId));
          root.append(observed);
        }
        if (displayStatus === 'unknown') {
