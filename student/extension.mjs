@@ -1236,7 +1236,7 @@
          prepared: '준비됨·미실행(prepared)',
          executing: '서버에 전달 중(executing)',
          pending: '서버 접수·처리 중(pending)',
-         succeeded: '결과 불명(unknown) · 실제 효과를 확인할 수 없습니다.',
+         succeeded: '효과 확인(succeeded)',
          denied: '연동 시스템 거절(denied)',
          failed: '연동 시스템 실패(failed)',
          unknown: '결과 불명(unknown) · 실제 효과를 확인할 수 없습니다.',
@@ -1244,7 +1244,9 @@
          error: '요청 처리 안 됨(error)',
        };
        const currentStatus = typeof status === 'string' && Object.hasOwn(labels, status) ? status : 'unknown';
-       root.dataset.status = currentStatus === 'succeeded' ? 'unknown' : currentStatus;
+       const confirmed = currentStatus === 'succeeded' && observation?.effectApplied === true;
+       const displayStatus = currentStatus === 'succeeded' && !confirmed ? 'unknown' : currentStatus;
+       root.dataset.status = displayStatus;
 
        function addMessage(text, className = 'muted', role) {
          const node = document.createElement('p');
@@ -1252,6 +1254,15 @@
          if (role) node.setAttribute('role', role);
          node.textContent = text;
          root.append(node);
+       }
+
+       function addPair(list, label, value) {
+         if (value === null) return;
+         const term = document.createElement('dt');
+         term.textContent = label;
+         const detail = document.createElement('dd');
+         detail.textContent = value;
+         list.append(term, detail);
        }
 
        const secret = /(?:Bearer\s+\S+|sk-(?:proj-|ant-|svcacct-)?[A-Za-z0-9_-]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:api[_ -]?key|authorization|password|비밀번호|토큰)\s*[:=]\s*\S+)/i;
@@ -1276,7 +1287,7 @@
        const heading = document.createElement('h3');
        heading.textContent = '보안 조치 요청 상태';
        root.append(heading);
-       addMessage(labels[currentStatus], 'state state-' + root.dataset.status,
+       addMessage(labels[displayStatus], confirmed ? 'state state-ok' : 'state state-' + displayStatus,
          ['denied', 'failed', 'error'].includes(currentStatus) ? 'alert' : 'status');
        if (currentStatus === 'prepared') {
          addMessage('제안과 준비만으로 조치는 실행되지 않습니다. 실제 대상과 확인 기한을 확인한 뒤 제공 화면의 「대상과 조치를 확인했으며 집행합니다」 버튼에서 별도로 사람 확인이 필요합니다.');
@@ -1294,7 +1305,16 @@
          const detail = safeText(message);
          if (detail) addMessage(detail);
        }
-       if (['unknown', 'succeeded'].includes(currentStatus)) {
+       if (confirmed) {
+         addMessage('연동 시스템에서 조회한 결과로 실제 효과를 확인했습니다.');
+         const observed = document.createElement('dl');
+         observed.className = 'student-action-observation';
+         addPair(observed, '관측 시각(observedAt)', safeText(observation.observedAt));
+         addPair(observed, '효과 관측', 'effectApplied: true');
+         addPair(observed, '접수 ID(receiptId)', safeText(receipt?.receiptId));
+         root.append(observed);
+       }
+       if (displayStatus === 'unknown') {
          addMessage('성공이나 효과 없음으로 판단하지 마세요. 같은 조치를 다시 집행하지 말고 제공 화면의 결과 재조회 버튼으로 결과만 확인하세요.');
        }
        if (event && Array.isArray(event.supportedActions) && event.supportedActions.length === 0) {
