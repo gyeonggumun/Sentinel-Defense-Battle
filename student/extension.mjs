@@ -1227,6 +1227,74 @@
        addMessage('AI 설명은 참고 정보입니다. 사실 판단은 근거 글과 연동 시스템이 알려 준 상태로 합니다. 설명·제안만으로 보안 조치가 실행되지는 않습니다.', 'muted', null);
        return root;
      },
-     renderAction() { return '학생 구현 대기: 현재 사건·조치·실제 대상·사람 확인·ACK와 원천 효과·unknown을 구분하세요.'; },
+     renderAction({ status, event, actionId, target, receipt, observation, message, confirmationExpiresAt, error } = {}) {
+       const root = document.createElement('section');
+       root.className = 'student-action-view';
+       const labels = {
+         idle: '아직 미실행(idle)',
+         loading: '조치 준비 또는 결과 조회 중(loading)',
+         prepared: '준비됨·미실행(prepared)',
+         executing: '서버에 전달 중(executing)',
+         pending: '서버 접수·처리 중(pending)',
+         succeeded: '결과 불명(unknown) · 실제 효과를 확인할 수 없습니다.',
+         denied: '연동 시스템 거절(denied)',
+         failed: '연동 시스템 실패(failed)',
+         unknown: '결과 불명(unknown) · 실제 효과를 확인할 수 없습니다.',
+         expired: '확인 기한 지남(expired) · 현재 기록에서 조치를 다시 준비하세요.',
+         error: '요청 처리 안 됨(error)',
+       };
+       const currentStatus = typeof status === 'string' && Object.hasOwn(labels, status) ? status : 'unknown';
+       root.dataset.status = currentStatus === 'succeeded' ? 'unknown' : currentStatus;
+
+       function addMessage(text, className = 'muted', role) {
+         const node = document.createElement('p');
+         node.className = className;
+         if (role) node.setAttribute('role', role);
+         node.textContent = text;
+         root.append(node);
+       }
+
+       const secret = /(?:Bearer\s+\S+|sk-(?:proj-|ant-|svcacct-)?[A-Za-z0-9_-]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:api[_ -]?key|authorization|password|비밀번호|토큰)\s*[:=]\s*\S+)/i;
+       const safeText = value => typeof value === 'string' && value.trim().length > 0 && value.length <= 2000
+         && !secret.test(value) && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)
+         ? value : null;
+       const safeMessages = {
+         ACTION_UNSUPPORTED: '현재 연동 시스템이 지원하는 조치 연결·권한을 확인할 수 없습니다.',
+         ACTION_DENIED: '현재 연동 시스템 정책이 이 조치를 허용하지 않습니다.',
+         ACTION_CONFIRMATION_EXPIRED: '확인 기한이 지났습니다. 조치를 다시 준비하고 대상을 확인하세요.',
+         ACTION_CONFIRMATION_INVALID: '조치 확인 정보가 유효하지 않습니다. 다시 준비하세요.',
+         ACTION_SCOPE_CHANGED: '사용자·프로젝트·세션 또는 연동 시스템 권한이 변경됐습니다. 현재 기록에서 다시 준비하세요.',
+         ACTION_SCOPE_UNVERIFIED: '현재 사용자와 조치 권한을 확인할 수 없습니다.',
+         SUBJECT_SCOPE_UNVERIFIED: '현재 사용자·프로젝트·세션을 확인할 수 없습니다.',
+         ACTION_SNAPSHOT_CHANGED: '사건 대상·근거·상태가 변경됐습니다. 현재 사건으로 다시 준비하세요.',
+         ACTION_EVENT_UNAVAILABLE: '현재 본인 사건을 확인할 수 없습니다.',
+         ACTION_TIMEOUT: '응답 시간이 초과되어 결과를 확인할 수 없습니다. 결과만 직접 재조회하세요.',
+         ACTION_STORE_FAILED: '조치 기록을 확인할 수 없습니다. 결과만 직접 재조회하세요.',
+         ACTION_RESULT_UNVERIFIED: '조치 처리 결과를 확인할 수 없습니다.',
+       };
+
+       const heading = document.createElement('h3');
+       heading.textContent = '보안 조치 요청 상태';
+       root.append(heading);
+       addMessage(labels[currentStatus], 'state state-' + root.dataset.status,
+         ['denied', 'failed', 'error'].includes(currentStatus) ? 'alert' : 'status');
+       if (currentStatus === 'error') {
+         const code = typeof error?.code === 'string' && Object.hasOwn(safeMessages, error.code)
+           ? error.code : 'ACTION_RESULT_UNVERIFIED';
+         const errorMessage = code === error?.code ? safeText(error.message) : null;
+         addMessage(code + ': ' + (errorMessage ?? safeMessages[code]), 'state state-error', 'alert');
+       } else if (['idle', 'denied', 'failed'].includes(currentStatus)) {
+         const detail = safeText(message);
+         if (detail) addMessage(detail);
+       }
+       if (['unknown', 'succeeded'].includes(currentStatus)) {
+         addMessage('성공이나 효과 없음으로 판단하지 마세요. 같은 조치를 다시 집행하지 말고 제공 화면의 결과 재조회 버튼으로 결과만 확인하세요.');
+       }
+       if (event && Array.isArray(event.supportedActions) && event.supportedActions.length === 0) {
+         addMessage('연동 시스템이 지원하는 조치가 없어 조치 준비 버튼이 표시되지 않는 것이 정상입니다.');
+       }
+       addMessage('조치 준비·사람 확인·결과 재조회는 제공 화면의 버튼을 사용하세요. 「조치 화면 취소」는 이미 서버에 전달된 조치 효과를 되돌리지 않습니다.');
+       return root;
+     },
    };
  }
