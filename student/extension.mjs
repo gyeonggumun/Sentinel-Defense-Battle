@@ -1186,6 +1186,17 @@
        if (!Array.isArray(event.rules) || !event.rules.every(isTextRow)) {
          return rejectExplanation('현재 이벤트의 규칙 ID·규칙 글을 확인할 수 없어 설명을 사용할 수 없습니다.');
        }
+       if (event.state === null || typeof event.state !== 'object' || Array.isArray(event.state)
+         || !['access', 'session', 'device'].every(key => typeof event.state[key] === 'string')) {
+         return rejectExplanation('현재 이벤트의 접속·세션·기기 상태를 확인할 수 없어 설명을 사용할 수 없습니다.');
+       }
+       if (!Array.isArray(event.supportedActions) || !Array.isArray(data.proposals)
+         || !data.proposals.every(proposal => proposal !== null && typeof proposal === 'object'
+           && typeof proposal.action === 'string' && event.supportedActions.includes(proposal.action)
+           && typeof proposal.reason === 'string' && proposal.reason.trim().length > 0
+           && matchesEvidence(proposal.evidenceIds))) {
+         return rejectExplanation('제안의 지원 조치·이유·근거가 현재 이벤트와 맞지 않아 설명을 사용할 수 없습니다.');
+       }
 
        root.setAttribute('data-student-explanation-event', eventId);
        addMessage('선택한 이벤트의 AI 설명을 수신했습니다.', 'state state-ok', 'status');
@@ -1202,6 +1213,17 @@
        root.append(summaryNode);
        addList('인용한 근거', data.evidenceIds.map(id => id + ' — ' + evidenceById.get(id)));
        addList('적용 규칙', event.rules.length > 0 ? event.rules.map(row => row.id + ' — ' + row.text) : ['없음']);
+       const stateNames = { access: '접속', session: '세션', device: '기기' };
+       const unknownStates = Object.keys(stateNames).filter(key => event.state[key] === 'unknown');
+       addList('확인 불가 상태', unknownStates.length > 0
+         ? unknownStates.map(key => stateNames[key] + ': 확인 불가(unknown)')
+         : ['없음']);
+       addList('조치 제안', data.proposals.length > 0
+         ? data.proposals.map(proposal => proposal.action + ' — ' + proposal.reason
+           + ' (근거: ' + proposal.evidenceIds.join(', ') + '). 사람 확인이 필요하며 실행되지 않았습니다.')
+         : [event.supportedActions.length === 0
+           ? '연동 시스템이 지원하는 조치가 없어 제안이 없습니다(정상).'
+           : 'AI가 제안한 조치가 없습니다.']);
        addMessage('AI 설명은 참고 정보입니다. 사실 판단은 근거 글과 연동 시스템이 알려 준 상태로 합니다. 설명·제안만으로 보안 조치가 실행되지는 않습니다.', 'muted', null);
        return root;
      },
