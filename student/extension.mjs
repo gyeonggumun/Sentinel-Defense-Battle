@@ -1278,6 +1278,13 @@
        root.append(heading);
        addMessage(labels[currentStatus], 'state state-' + root.dataset.status,
          ['denied', 'failed', 'error'].includes(currentStatus) ? 'alert' : 'status');
+       if (currentStatus === 'prepared') {
+         addMessage('제안과 준비만으로 조치는 실행되지 않습니다. 실제 대상과 확인 기한을 확인한 뒤 제공 화면의 「대상과 조치를 확인했으며 집행합니다」 버튼에서 별도로 사람 확인이 필요합니다.');
+       } else if (['loading', 'executing'].includes(currentStatus)) {
+         addMessage('처리 결과는 아직 확인되지 않았습니다.');
+       } else if (currentStatus === 'pending') {
+         addMessage('ACK는 서버의 요청 접수 응답이며 실제 효과를 뜻하지 않습니다. 처리 결과는 아직 확인되지 않았습니다.');
+       }
        if (currentStatus === 'error') {
          const code = typeof error?.code === 'string' && Object.hasOwn(safeMessages, error.code)
            ? error.code : 'ACTION_RESULT_UNVERIFIED';
