@@ -1089,6 +1089,18 @@
          return root;
        }
 
+       function addList(title, values) {
+         const titleNode = document.createElement('h4');
+         titleNode.textContent = title;
+         const list = document.createElement('ul');
+         for (const value of values) {
+           const item = document.createElement('li');
+           item.textContent = value;
+           list.append(item);
+         }
+         root.append(titleNode, list);
+       }
+
        if (currentStatus === 'error') {
          const safeMessages = {
            ON_AI_PROVISIONING_PENDING: '학생 앱 이용 권한의 발급·연결을 준비 중입니다. 담당자에게 확인하세요.',
@@ -1148,7 +1160,7 @@
          ? event.id
          : null;
        const summary = resource.data !== null && typeof resource.data === 'object' && !Array.isArray(resource.data)
-         && typeof resource.data.summary === 'string' && resource.data.summary.length > 0
+         && typeof resource.data.summary === 'string' && resource.data.summary.trim().length > 0
          ? resource.data.summary
          : null;
        if (eventId === null || summary === null) {
@@ -1157,6 +1169,22 @@
        const data = resource.data;
        if (data.executed !== false || data.requiresHumanConfirmation !== true) {
          return rejectExplanation('이미 조치를 실행했다고 답했거나 사람 확인·미실행 상태를 확인할 수 없는 설명은 사용할 수 없습니다.');
+       }
+       const isTextRow = row => row !== null && typeof row === 'object'
+         && typeof row.id === 'string' && row.id.length > 0
+         && typeof row.text === 'string' && row.text.trim().length > 0;
+       if (!Array.isArray(event.evidence) || event.evidence.length === 0 || !event.evidence.every(isTextRow)) {
+         return rejectExplanation('현재 이벤트의 근거가 부족하거나 근거 글을 확인할 수 없어 설명을 사용할 수 없습니다.');
+       }
+       const evidenceById = new Map(event.evidence.map(row => [row.id, row.text]));
+       const matchesEvidence = refs => Array.isArray(refs) && refs.length > 0
+         && new Set(refs).size === refs.length && refs.every(id => evidenceById.has(id));
+       if (evidenceById.size !== event.evidence.length || !matchesEvidence(data.evidenceIds)
+         || data.evidenceIds.length !== evidenceById.size) {
+         return rejectExplanation('설명의 근거 ID가 현재 이벤트의 근거와 일치하지 않거나 누락·중복되어 설명을 사용할 수 없습니다.');
+       }
+       if (!Array.isArray(event.rules) || !event.rules.every(isTextRow)) {
+         return rejectExplanation('현재 이벤트의 규칙 ID·규칙 글을 확인할 수 없어 설명을 사용할 수 없습니다.');
        }
 
        root.setAttribute('data-student-explanation-event', eventId);
@@ -1172,6 +1200,8 @@
        const summaryNode = document.createElement('p');
        summaryNode.textContent = summary;
        root.append(summaryNode);
+       addList('인용한 근거', data.evidenceIds.map(id => id + ' — ' + evidenceById.get(id)));
+       addList('적용 규칙', event.rules.length > 0 ? event.rules.map(row => row.id + ' — ' + row.text) : ['없음']);
        addMessage('AI 설명은 참고 정보입니다. 사실 판단은 근거 글과 연동 시스템이 알려 준 상태로 합니다. 설명·제안만으로 보안 조치가 실행되지는 않습니다.', 'muted', null);
        return root;
      },
