@@ -953,6 +953,15 @@
          return root;
        }
 
+       function addPair(list, label, value) {
+         if (!(typeof value === 'string' && value.trim().length > 0) && !Number.isSafeInteger(value)) return;
+         const term = document.createElement('dt');
+         term.textContent = label;
+         const detail = document.createElement('dd');
+         detail.textContent = String(value);
+         list.append(term, detail);
+       }
+
        if (currentStatus === 'idle') {
          addMessage('아직 조회 전(idle)입니다.', 'state state-empty', 'status');
          return finish();
@@ -992,6 +1001,21 @@
          addMessage('조회 실패: 전체 조회 상태와 패키지 목록을 확인할 수 없습니다.', 'state state-error', 'alert');
          return finish();
        }
+       const packageLabels = {
+         known_vulnerabilities: '알려진 항목 있음(known_vulnerabilities)',
+         none_found: '알려진 항목 없음(none_found)',
+         unverifiable: '조회 확인 불가(unverifiable)',
+       };
+       const exactVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+       if (data.packages.some(pkg => pkg === null || typeof pkg !== 'object' || Array.isArray(pkg)
+         || typeof pkg.name !== 'string' || pkg.name.length === 0
+         || typeof pkg.version !== 'string' || !exactVersion.test(pkg.version)
+         || typeof pkg.status !== 'string' || !Object.hasOwn(packageLabels, pkg.status)
+         || typeof pkg.source !== 'string' || typeof pkg.checkedAt !== 'string' || !Array.isArray(pkg.vulnerabilities))) {
+         root.dataset.status = 'error';
+         addMessage('조회 실패: 패키지의 정확한 설치 버전·조회 상태·출처·시각을 확인할 수 없습니다. 버전 범위를 설치 버전으로 표시하지 않습니다.', 'state state-error', 'alert');
+         return finish();
+       }
        addMessage(scanLabels[data.status], data.status === 'partial' ? 'state state-error' : 'state', 'status');
        if (data.status === 'not_configured') {
          addMessage('조회 대상 프로젝트 설정이 필요합니다. 대상 경로와 허용 공개 패키지는 운영자가 준비합니다.');
@@ -1002,6 +1026,43 @@
        } else if (data.status === 'partial') {
          addMessage('일부 패키지 조회를 확인할 수 없습니다. 이미 받은 취약점 ID는 유지하며, 미확인 항목을 알려진 취약점 없음으로 판단하지 않습니다.');
        }
+       const details = document.createElement('dl');
+       details.className = 'student-vulnerabilities-details';
+       addPair(details, '잠금 파일 버전(lockfileVersion)', data.lockfileVersion);
+       addPair(details, '잠금 파일 해시(lockfileHash)', data.lockfileHash);
+       addPair(details, '전체 조회 시각(checkedAt)', data.checkedAt);
+       root.append(details);
+       if (data.packages.length === 0) {
+         if (data.status === 'complete') addMessage('표시할 패키지 조회 결과가 없습니다.');
+         return finish();
+       }
+       addMessage('설치 버전 대조 자료: package-lock.json · 설치된 node_modules 메타데이터. 이 화면은 전달받은 값만 표시합니다.');
+       const table = document.createElement('table');
+       const caption = document.createElement('caption');
+       caption.textContent = '패키지별 OSV 조회 결과';
+       const head = document.createElement('thead');
+       const headings = document.createElement('tr');
+       for (const label of ['패키지 이름(name)', '정확한 설치 버전(version)', '조회 상태(status)', '출처(source)', '패키지 조회 시각(checkedAt)']) {
+         const cell = document.createElement('th');
+         cell.setAttribute('scope', 'col');
+         cell.textContent = label;
+         headings.append(cell);
+       }
+       head.append(headings);
+       const body = document.createElement('tbody');
+       for (const pkg of data.packages) {
+         const row = document.createElement('tr');
+         row.setAttribute('data-student-package-name', pkg.name);
+         row.setAttribute('data-student-package-version', pkg.version);
+         for (const value of [pkg.name, pkg.version, packageLabels[pkg.status], pkg.source, pkg.checkedAt]) {
+           const cell = document.createElement('td');
+           cell.textContent = value;
+           row.append(cell);
+         }
+         body.append(row);
+       }
+       table.append(caption, head, body);
+       root.append(table);
        return finish();
      },
      renderAiConnection({ status, mode, data, error, checkedAt, explanationAccepted } = {}) {
