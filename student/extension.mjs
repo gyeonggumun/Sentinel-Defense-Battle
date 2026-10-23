@@ -979,7 +979,29 @@
          return finish();
        }
 
-       addMessage('조회 응답을 수신했습니다. 전체 조회 상태를 확인하세요.', 'state', 'status');
+       const scanLabels = {
+         complete: '모두 조회(complete)',
+         partial: '일부 조회 실패(partial)',
+         not_checked: '아직 조회 안 함(not_checked)',
+         not_configured: '조회 준비 미완료(not_configured)',
+         unverifiable: 'lock 파일 확인 불가(unverifiable)',
+       };
+       if (data === null || typeof data !== 'object' || Array.isArray(data)
+         || typeof data.status !== 'string' || !Object.hasOwn(scanLabels, data.status) || !Array.isArray(data.packages)) {
+         root.dataset.status = 'error';
+         addMessage('조회 실패: 전체 조회 상태와 패키지 목록을 확인할 수 없습니다.', 'state state-error', 'alert');
+         return finish();
+       }
+       addMessage(scanLabels[data.status], data.status === 'partial' ? 'state state-error' : 'state', 'status');
+       if (data.status === 'not_configured') {
+         addMessage('조회 대상 프로젝트 설정이 필요합니다. 대상 경로와 허용 공개 패키지는 운영자가 준비합니다.');
+       } else if (data.status === 'not_checked') {
+         addMessage('승인된 공개 조회 대상이 없어 조회하지 않았습니다. 조회 대상과 허용 공개 패키지는 운영자가 준비합니다.');
+       } else if (data.status === 'unverifiable') {
+         addMessage('package-lock.json을 확인할 수 없어 정확한 패키지 버전의 조회 결과를 확인할 수 없습니다.');
+       } else if (data.status === 'partial') {
+         addMessage('일부 패키지 조회를 확인할 수 없습니다. 이미 받은 취약점 ID는 유지하며, 미확인 항목을 알려진 취약점 없음으로 판단하지 않습니다.');
+       }
        return finish();
      },
      renderAiConnection({ status, mode, data, error, checkedAt, explanationAccepted } = {}) {
