@@ -1011,7 +1011,12 @@
          || typeof pkg.name !== 'string' || pkg.name.length === 0
          || typeof pkg.version !== 'string' || !exactVersion.test(pkg.version)
          || typeof pkg.status !== 'string' || !Object.hasOwn(packageLabels, pkg.status)
-         || typeof pkg.source !== 'string' || typeof pkg.checkedAt !== 'string' || !Array.isArray(pkg.vulnerabilities))) {
+         || typeof pkg.source !== 'string' || typeof pkg.checkedAt !== 'string' || !Array.isArray(pkg.vulnerabilities)
+         || pkg.vulnerabilities.some(finding => finding === null || typeof finding !== 'object'
+           || typeof finding.id !== 'string' || finding.id.length === 0
+           || typeof finding.modified !== 'string' || finding.modified.length === 0)
+         || (pkg.status === 'known_vulnerabilities' && pkg.vulnerabilities.length === 0)
+         || (pkg.status === 'none_found' && pkg.vulnerabilities.length > 0))) {
          root.dataset.status = 'error';
          addMessage('조회 실패: 패키지의 정확한 설치 버전·조회 상태·출처·시각을 확인할 수 없습니다. 버전 범위를 설치 버전으로 표시하지 않습니다.', 'state state-error', 'alert');
          return finish();
@@ -1042,7 +1047,7 @@
        caption.textContent = '패키지별 OSV 조회 결과';
        const head = document.createElement('thead');
        const headings = document.createElement('tr');
-       for (const label of ['패키지 이름(name)', '정확한 설치 버전(version)', '조회 상태(status)', '출처(source)', '패키지 조회 시각(checkedAt)']) {
+       for (const label of ['패키지 이름(name)', '정확한 설치 버전(version)', '조회 상태(status)', '출처(source)', '패키지 조회 시각(checkedAt)', '취약점 ID·수정 시각(id·modified)']) {
          const cell = document.createElement('th');
          cell.setAttribute('scope', 'col');
          cell.textContent = label;
@@ -1054,15 +1059,35 @@
          const row = document.createElement('tr');
          row.setAttribute('data-student-package-name', pkg.name);
          row.setAttribute('data-student-package-version', pkg.version);
-         for (const value of [pkg.name, pkg.version, packageLabels[pkg.status], pkg.source, pkg.checkedAt]) {
+         const packageStatus = pkg.status === 'unverifiable' && pkg.vulnerabilities.length > 0
+           ? '일부 확인·전체 조회 확인 불가(unverifiable)' : packageLabels[pkg.status];
+         for (const value of [pkg.name, pkg.version, packageStatus, pkg.source, pkg.checkedAt]) {
            const cell = document.createElement('td');
            cell.textContent = value;
            row.append(cell);
          }
+         const findings = document.createElement('td');
+         if (pkg.vulnerabilities.length > 0) {
+           const list = document.createElement('ul');
+           for (const vulnerability of pkg.vulnerabilities) {
+             const item = document.createElement('li');
+             item.textContent = vulnerability.id + ' — 수정 시각(modified): ' + vulnerability.modified;
+             list.append(item);
+           }
+           findings.append(list);
+         } else {
+           findings.textContent = pkg.status === 'none_found'
+             ? '이 정확한 버전의 조회 범위에서 알려진 항목이 없습니다.'
+             : '조회 확인 불가이며 알려진 항목 없음으로 판단하지 않습니다.';
+         }
+         row.append(findings);
          body.append(row);
        }
        table.append(caption, head, body);
        root.append(table);
+       if (data.packages.some(pkg => pkg.status === 'none_found')) {
+         addMessage('none_found는 해당 정확한 버전의 조회 시점·범위에서 알려진 항목이 없다는 뜻입니다.');
+       }
        return finish();
      },
      renderAiConnection({ status, mode, data, error, checkedAt, explanationAccepted } = {}) {
