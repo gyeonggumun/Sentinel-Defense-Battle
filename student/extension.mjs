@@ -983,8 +983,11 @@
            REQUEST_INVALID: '조회 요청을 처리할 수 없습니다.',
          };
          const code = typeof error?.code === 'string' && Object.hasOwn(safeMessages, error.code) ? error.code : null;
+         const message = typeof error?.message === 'string' && error.message.trim().length > 0
+           ? error.message
+           : (code ? safeMessages[code] : '패키지 조회를 확인할 수 없습니다. 결과를 표시하지 않습니다.');
          addMessage('조회 실패(error)' + (code ? ' (' + code + ')' : '') + ': '
-           + (code ? safeMessages[code] : '패키지 조회를 확인할 수 없습니다. 결과를 표시하지 않습니다.'), 'state state-error', 'alert');
+           + message, 'state state-error', 'alert');
          return finish();
        }
 
