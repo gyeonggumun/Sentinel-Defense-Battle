@@ -1082,14 +1082,6 @@
          list.append(term, detail);
        }
 
-       if (currentStatus === 'idle') {
-         addMessage('이벤트 설명은 아직 실행되지 않았습니다.', 'state state-empty', 'status');
-         return root;
-       }
-       if (currentStatus === 'loading') {
-         addMessage('선택한 이벤트의 설명을 확인하는 중입니다…', 'state state-loading', 'status');
-         return root;
-       }
        if (currentStatus === 'error') {
          const safeMessages = {
            ON_AI_PROVISIONING_PENDING: '학생 앱 이용 권한의 발급·연결을 준비 중입니다. 담당자에게 확인하세요.',
@@ -1110,8 +1102,8 @@
            ON_AI_AUTHORIZATION_CHANGED: 'AI 이용 권한 내용이 점검 도중 바뀌었습니다. 다시 점검하기 전에 담당자에게 현재 권한을 확인하세요.',
            ON_AI_MODEL_LIST_EMPTY: '현재 앱 권한으로 쓸 수 있는 AI 모델이 없습니다. 담당자에게 모델 허용 설정을 확인하세요.',
            SUBJECT_SCOPE_UNVERIFIED: '현재 로그인과 사건·프로젝트의 연결을 확인할 수 없습니다.',
-           ON_AI_INVALID_INPUT: '설명에 필요한 사건 근거·규칙을 확인할 수 없습니다.',
-           ON_AI_INVALID_OUTPUT: 'AI 설명의 근거·조치·응답 형식을 확인할 수 없습니다.',
+           ON_AI_INVALID_INPUT: '설명에 필요한 사건 근거·규칙이 부족하거나 현재 상태 등 입력을 확인할 수 없습니다.',
+           ON_AI_INVALID_OUTPUT: 'AI 설명의 근거·조치·응답 형식이 맞지 않아 사용할 수 없습니다. 근거가 일치하지 않거나 이미 조치를 실행했다고 답한 설명은 사용할 수 없습니다.',
            AI_REQUEST_UNVERIFIED: 'AI 연결 또는 응답을 확인할 수 없습니다. 기존 기록을 확인하세요.',
          };
          const failure = resource.error !== null && typeof resource.error === 'object' && !Array.isArray(resource.error)
@@ -1121,8 +1113,21 @@
            ? failure.code
            : 'AI_REQUEST_UNVERIFIED';
          const message = safeMessages[code];
-         addMessage('설명 요청 실패 (' + code + '): ' + message, 'state state-error', 'alert');
-         addMessage('실패해도 보안 이벤트 기록은 변경되지 않았습니다.', 'muted', null);
+         addMessage('AI 설명 실패 (' + code + '): ' + message, 'state state-error', 'alert');
+         addMessage('보안 이벤트 기록은 그대로입니다. AI 설명 실패는 과제 실패를 의미하지 않습니다.', 'muted', null);
+         return root;
+       }
+
+       if (event == null) {
+         addMessage('보안 기록에서 기록을 먼저 고르세요.', 'state state-empty', 'status');
+         return root;
+       }
+       if (currentStatus === 'idle') {
+         addMessage('이벤트 설명은 아직 실행되지 않았습니다.', 'state state-empty', 'status');
+         return root;
+       }
+       if (currentStatus === 'loading') {
+         addMessage('선택한 이벤트의 AI 설명을 요청 중입니다…', 'state state-loading', 'status');
          return root;
        }
 
