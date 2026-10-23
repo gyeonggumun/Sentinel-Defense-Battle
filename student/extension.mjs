@@ -1082,6 +1082,13 @@
          list.append(term, detail);
        }
 
+       function rejectExplanation(reason) {
+         root.dataset.status = 'error';
+         addMessage('AI 설명 실패 (ON_AI_INVALID_OUTPUT): ' + reason, 'state state-error', 'alert');
+         addMessage('보안 이벤트 기록은 그대로입니다.', 'muted', null);
+         return root;
+       }
+
        if (currentStatus === 'error') {
          const safeMessages = {
            ON_AI_PROVISIONING_PENDING: '학생 앱 이용 권한의 발급·연결을 준비 중입니다. 담당자에게 확인하세요.',
@@ -1145,20 +1152,27 @@
          ? resource.data.summary
          : null;
        if (eventId === null || summary === null) {
-         addMessage('이벤트 설명 응답을 확인할 수 없습니다. 보안 기록은 변경되지 않았습니다.', 'state state-error', 'alert');
-         return root;
+         return rejectExplanation('사건 ID 또는 AI 요약을 확인할 수 없어 설명을 사용할 수 없습니다.');
+       }
+       const data = resource.data;
+       if (data.executed !== false || data.requiresHumanConfirmation !== true) {
+         return rejectExplanation('이미 조치를 실행했다고 답했거나 사람 확인·미실행 상태를 확인할 수 없는 설명은 사용할 수 없습니다.');
        }
 
        root.setAttribute('data-student-explanation-event', eventId);
-       addMessage('이벤트 설명 요청이 성공했습니다.', 'state state-ok', 'status');
+       addMessage('선택한 이벤트의 AI 설명을 수신했습니다.', 'state state-ok', 'status');
        const details = document.createElement('dl');
        details.className = 'student-explanation-details';
        addPair(details, '사건 ID', eventId);
        if (typeof checkedAt === 'string' && checkedAt.length > 0) addPair(details, '설명 확인 시각', checkedAt);
        root.append(details);
+       const summaryHeading = document.createElement('h4');
+       summaryHeading.textContent = 'AI 설명(참고용)';
+       root.append(summaryHeading);
        const summaryNode = document.createElement('p');
        summaryNode.textContent = summary;
        root.append(summaryNode);
+       addMessage('AI 설명은 참고 정보입니다. 사실 판단은 근거 글과 연동 시스템이 알려 준 상태로 합니다. 설명·제안만으로 보안 조치가 실행되지는 않습니다.', 'muted', null);
        return root;
      },
      renderAction() { return '학생 구현 대기: 현재 사건·조치·실제 대상·사람 확인·ACK와 원천 효과·unknown을 구분하세요.'; },
