@@ -931,7 +931,57 @@
        root.append(notificationSection);
        return root;
      },
-     renderVulnerabilities() { return '학생 구현 대기: 정확한 설치 버전·OSV 출처·조회 시각·부분 결과·조회 실패를 구분하세요.'; },
+     renderVulnerabilities({ status, mode, data, error } = {}) {
+       const root = document.createElement('section');
+       root.className = 'student-vulnerabilities-view';
+       const currentStatus = ['idle', 'loading', 'error', 'ok'].includes(status) ? status : 'error';
+       root.dataset.status = currentStatus;
+       const heading = document.createElement('h3');
+       heading.textContent = '설치 패키지 취약점 조회';
+       root.append(heading);
+
+       function addMessage(text, className = 'muted', role) {
+         const node = document.createElement('p');
+         node.className = className;
+         if (role) node.setAttribute('role', role);
+         node.textContent = text;
+         root.append(node);
+       }
+
+       function finish() {
+         addMessage('OSV는 알려진 취약점 데이터베이스입니다. 조회 결과가 없다는 사실만으로 해당 패키지나 앱 전체가 안전하다고 보장할 수 없습니다.');
+         return root;
+       }
+
+       if (currentStatus === 'idle') {
+         addMessage('아직 조회 전(idle)입니다.', 'state state-empty', 'status');
+         return finish();
+       }
+       if (currentStatus === 'loading') {
+         addMessage('설치 패키지 취약점 조회 중(loading)입니다. 이전 표는 현재 결과로 표시하지 않습니다.', 'state state-loading', 'status');
+         return finish();
+       }
+       if (currentStatus === 'error') {
+         const safeMessages = {
+           CANCELLED: '패키지 조회를 취소했습니다. 이전 결과는 현재 확인 결과가 아닙니다.',
+           REQUEST_CANCELLED: '패키지 조회를 취소했습니다. 이전 결과는 현재 확인 결과가 아닙니다.',
+           TIMEOUT: '패키지 조회 응답이 늦어 중단했습니다. 잠시 뒤 직접 다시 조회하세요.',
+           REQUEST_TIMEOUT: '패키지 조회 응답이 늦어 중단했습니다. 잠시 뒤 직접 다시 조회하세요.',
+           CONTRACT_MISMATCH: '패키지 조회 응답 형식을 확인할 수 없습니다. 결과를 표시하지 않습니다.',
+           SERVICE_UNAVAILABLE: '패키지 조회를 지금 처리할 수 없습니다. 잠시 뒤 직접 다시 조회하세요.',
+           HOST_REJECTED: '허용되지 않은 접속 주소라 조회하지 않았습니다.',
+           ORIGIN_REJECTED: '허용되지 않은 화면에서 온 요청이라 조회하지 않았습니다.',
+           REQUEST_INVALID: '조회 요청을 처리할 수 없습니다.',
+         };
+         const code = typeof error?.code === 'string' && Object.hasOwn(safeMessages, error.code) ? error.code : null;
+         addMessage('조회 실패(error)' + (code ? ' (' + code + ')' : '') + ': '
+           + (code ? safeMessages[code] : '패키지 조회를 확인할 수 없습니다. 결과를 표시하지 않습니다.'), 'state state-error', 'alert');
+         return finish();
+       }
+
+       addMessage('조회 응답을 수신했습니다. 전체 조회 상태를 확인하세요.', 'state', 'status');
+       return finish();
+     },
      renderAiConnection({ status, mode, data, error, checkedAt, explanationAccepted } = {}) {
        const root = document.createElement('section');
        root.className = 'student-ai-connection-view';
