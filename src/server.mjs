@@ -4,8 +4,9 @@ import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {AsyncLocalStorage} from 'node:async_hooks';
-import {types} from 'node:util';
-import {cpus,freemem,totalmem} from 'node:os';
+import {execFile} from 'node:child_process';
+import {promisify,types} from 'node:util';
+import {cpus,freemem,networkInterfaces,totalmem} from 'node:os';
 import {createActionService} from './actions/service.mjs';
 import {createSdpActionConfiguration} from './actions/sdp-action-engine.mjs';
 import {readActionStartupConfiguration} from './actions/action-startup-config.mjs';
@@ -23,6 +24,7 @@ import {createNativeHostContext,captureNativeHostConfiguration,readNativeHostCon
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const pcCpuSampleMs=500;
+const execFileAsync=promisify(execFile);
 function cpuTimeSnapshot(){
   const processors=cpus();if(processors.length===0)return null;
   let total=0,idle=0;
@@ -57,6 +59,58 @@ async function readLocalPcStatus(clock){
   }catch{}
   const checkedAt=clock().toISOString();
   return {origin:'local-os',status:[cpu,memory,disk].every(metric=>metric.status==='ok')?'ok':'partial',checkedAt,cpu,memory,disk};
+}
+async function readLocalConnectionStatus(clock){
+  let network={status:'unavailable',code:'NETWORK_QUERY_FAILED',interfaces:[]};
+  try{
+    const interfaces=networkInterfaces();
+    network={status:'ok',interfaces:Object.entries(interfaces).flatMap(([name,addresses])=>(addresses??[]).map(address=>({
+      name,family:address.family,address:address.address,cidr:address.cidr,internal:address.internal,
+    })))};
+  }catch{}
+  let firewall={status:'unavailable',code:process.platform==='win32'?'FIREWALL_QUERY_FAILED':'WINDOWS_ONLY',profiles:[]};
+  let windowsEvents={status:'unavailable',code:process.platform==='win32'?'EVENT_LOG_QUERY_FAILED':'WINDOWS_ONLY',windowHours:24,logs:[]};
+  if(process.platform==='win32'){
+    const script=String.raw`
+$ErrorActionPreference = 'Stop'
+$firewall = @{ status = 'unavailable'; code = 'FIREWALL_QUERY_FAILED'; profiles = @() }
+$events = @{ status = 'unavailable'; code = 'EVENT_LOG_QUERY_FAILED'; windowHours = 24; logs = @() }
+try {
+  $profiles = @(Get-NetFirewallProfile -ErrorAction Stop | ForEach-Object { @{ name = [string]$_.Name; enabled = [bool]$_.Enabled } })
+  if ($profiles.Count -eq 0) { throw 'No firewall profiles returned' }
+  $firewall = @{ status = 'ok'; profiles = $profiles }
+} catch {
+  $code = if ($_.FullyQualifiedErrorId -match 'AccessDenied|Unauthorized|Security') { 'ACCESS_DENIED' } else { 'FIREWALL_QUERY_FAILED' }
+  $firewall = @{ status = 'unavailable'; code = $code; profiles = @() }
+}
+try {
+  $since = [DateTime]::UtcNow.AddHours(-24)
+  $logs = @('System', 'Application') | ForEach-Object {
+    $name = $_
+    $metadata = Get-WinEvent -ListLog $name -ErrorAction Stop
+    if (-not $metadata.IsEnabled) { throw 'Event log disabled' }
+    try { $rows = @(Get-WinEvent -FilterHashtable @{ LogName = $name; StartTime = $since; Level = @(2, 3) } -ErrorAction Stop) }
+    catch { if ($_.FullyQualifiedErrorId -match '^NoMatchingEventsFound') { $rows = @() } else { throw } }
+    @{ logName = $name; errorCount = @($rows | Where-Object { $_.Level -eq 2 }).Count; warningCount = @($rows | Where-Object { $_.Level -eq 3 }).Count }
+  }
+  $events = @{ status = 'ok'; windowHours = 24; logs = @($logs) }
+} catch {
+  $code = if ($_.FullyQualifiedErrorId -match 'AccessDenied|Unauthorized|Security') { 'ACCESS_DENIED' } else { 'EVENT_LOG_QUERY_FAILED' }
+  $events = @{ status = 'unavailable'; code = $code; windowHours = 24; logs = @() }
+}
+@{ firewall = $firewall; windowsEvents = $events } | ConvertTo-Json -Depth 5 -Compress
+`;
+    try{
+      const {stdout}=await execFileAsync('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,timeout:8500,maxBuffer:65536});
+      const result=JSON.parse(stdout.trim());
+      if(result?.firewall?.status==='ok'&&Array.isArray(result.firewall.profiles))firewall=result.firewall;
+      else if(typeof result?.firewall?.code==='string')firewall.code=result.firewall.code;
+      if(result?.windowsEvents?.status==='ok'&&Array.isArray(result.windowsEvents.logs))windowsEvents=result.windowsEvents;
+      else if(typeof result?.windowsEvents?.code==='string')windowsEvents.code=result.windowsEvents.code;
+    }catch{}
+  }
+  const checkedAt=clock().toISOString();
+  return {origin:'local-os',checkedAt,network:{...network,checkedAt},firewall:{...firewall,checkedAt},windowsEvents:{...windowsEvents,checkedAt}};
 }
 const id=value=>typeof value==='string'&&/^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/.test(value);
 const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
@@ -719,12 +773,12 @@ export function createOnServer(serverOptions={}) {
         }finally{closeNativeHostOperation(nativeOperation);}
       }
       if(req.method==='GET'&&url.pathname==='/api/diagnostics'){
-        // 학생이 누른 도움정보 조회에서 외부 연결 진단과 별도로 이 PC의 OS 자원만 측정한다.
+        // 학생이 누른 도움정보 조회에서 외부 연결 진단과 별도로 이 PC의 OS 정보를 읽기 전용으로 조회한다.
         const info=(mappedAi??defaultAi).connectionInfo();
-        const pcStatus=await readLocalPcStatus(clock);
+        const [pcStatus,connectionStatus]=await Promise.all([readLocalPcStatus(clock),readLocalConnectionStatus(clock)]);
         assertAlive();
         send(200,{ok:true,data:{requestId,component:'on-client',version:'0.1.0',engine:{mode,code:mode==='disconnected'?'ENGINE_NOT_CONNECTED':mode==='demo'?'DEMO_ONLY':'ADAPTER_CONFIGURED'},
-          ai:{configured:info?.configured===true,authorized:false,authorizationRequired:true},checkedAt:pcStatus.checkedAt,workbenchRequiredAtRuntime:false,pcStatus}});return;
+          ai:{configured:info?.configured===true,authorized:false,authorizationRequired:true},checkedAt:pcStatus.checkedAt,workbenchRequiredAtRuntime:false,pcStatus,connectionStatus}});return;
       }
       if(req.method==='GET'&&url.pathname==='/api/vulnerabilities'){
         const data=await bounded(signal=>scanner.scan({signal}));send(200,{ok:true,data});

@@ -909,6 +909,96 @@
        pcSection.append(pcExample);
        root.append(pcSection);
 
+       const connectionSection = document.createElement('section');
+       connectionSection.className = 'student-status-resource';
+       connectionSection.setAttribute('data-sentinel-origin', 'measured');
+       const connectionHeading = document.createElement('h4');
+       connectionHeading.textContent = '네트워크·방화벽·Windows 기록';
+       const connectionIntro = document.createElement('p');
+       connectionIntro.className = 'muted';
+       connectionIntro.textContent = '앱 서버가 실행 중인 이 PC에서 읽은 값입니다. 방화벽 설정은 변경하지 않습니다. Windows 이벤트 건수는 최근 24시간의 System·Application 경고/오류이며 침해 판정이 아닙니다.';
+       const retry = document.createElement('button');
+       retry.type = 'button';
+       retry.className = 'btn';
+       retry.textContent = '다시 조회';
+       retry.disabled = diagnostics?.status === 'loading';
+       const retryStatus = document.createElement('p');
+       retryStatus.setAttribute('role', 'status');
+       retry.addEventListener('click', () => {
+         const providedButton = document.getElementById('diag-load');
+         if (providedButton && !providedButton.disabled) providedButton.click();
+         else retryStatus.textContent = providedButton ? '도움정보 조회가 이미 진행 중입니다.' : '제공 화면의 「도움정보 불러오기」를 찾을 수 없습니다.';
+       });
+       const connectionStatus = diagnostics?.status === 'ok' && isRecord(diagnostics.data?.connectionStatus)
+         && diagnostics.data.connectionStatus.origin === 'local-os' ? diagnostics.data.connectionStatus : null;
+       const connectionTime = typeof connectionStatus?.checkedAt === 'string' && Number.isFinite(Date.parse(connectionStatus.checkedAt))
+         ? new Date(connectionStatus.checkedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '확인 불가';
+       const connectionSource = document.createElement('p');
+       connectionSource.className = 'muted';
+       connectionSource.textContent = '조회 출처: 로컬 앱 서버 · 네트워크는 Node.js OS API, 방화벽·이벤트는 Windows PowerShell · 조회 시각(KST): ' + connectionTime;
+       connectionSection.append(connectionHeading, connectionIntro, retry, retryStatus, connectionSource);
+
+       function addConnectionResult(title, state, rows, unavailableText) {
+         const subsection = document.createElement('section');
+         const subheading = document.createElement('h5');
+         subheading.textContent = title;
+         subsection.append(subheading);
+         if (diagnostics?.status === 'loading') addMessage(subsection, title + ' 조회 중입니다…', 'state state-loading');
+         else if (diagnostics?.status === 'error') addMessage(subsection, title + ' 조회 실패. 「다시 조회」를 누르거나 제공 화면의 오류 상세를 확인하세요.', 'state state-error', 'alert');
+         else if (!state) addMessage(subsection, '아직 조회하지 않았습니다. 「다시 조회」를 누르세요.', 'state state-empty');
+         else if (state.status !== 'ok') {
+           const code = typeof state.code === 'string' ? state.code : 'UNKNOWN';
+           const reason = code === 'WINDOWS_ONLY' ? 'Windows에서만 조회할 수 있습니다.'
+             : code === 'ACCESS_DENIED' ? '읽기 권한이 거부되었습니다. 권한을 임의로 높이지 말고 관리자에게 확인하세요.'
+               : unavailableText;
+           addMessage(subsection, '확인 불가 (' + code + '): ' + reason, 'state state-error', 'status');
+         } else rows(subsection, state);
+         connectionSection.append(subsection);
+       }
+
+       addConnectionResult('로컬 네트워크 구성', connectionStatus?.network, (subsection, state) => {
+         const list = document.createElement('dl');
+         list.className = 'identity';
+         const interfaces = Array.isArray(state.interfaces) ? state.interfaces : [];
+         if (interfaces.length === 0) addPair(list, '인터페이스', '조회됐지만 주소가 없습니다.');
+         for (const item of interfaces) {
+           if (!isRecord(item) || typeof item.name !== 'string' || typeof item.address !== 'string') continue;
+           const label = item.name + ' · ' + valueText(item.family, '주소 형식 확인 불가')
+             + (item.internal === true ? ' · 루프백' : '');
+           addPair(list, label, item.address + (typeof item.cidr === 'string' ? ' (' + item.cidr + ')' : ''));
+         }
+         subsection.append(list);
+       }, '네트워크 인터페이스 정보를 읽지 못했습니다. 로컬 서버 상태를 확인하세요.');
+
+       addConnectionResult('방화벽 프로필 · 읽기 전용', connectionStatus?.firewall, (subsection, state) => {
+         const list = document.createElement('dl');
+         list.className = 'identity';
+         for (const profile of Array.isArray(state.profiles) ? state.profiles : []) {
+           if (!isRecord(profile) || typeof profile.name !== 'string' || typeof profile.enabled !== 'boolean') continue;
+           addPair(list, profile.name, profile.enabled ? '사용(켜짐)' : '사용 안 함(꺼짐)');
+         }
+         subsection.append(list);
+       }, '방화벽 프로필 조회에 실패했습니다. PowerShell의 Get-NetFirewallProfile 읽기 권한과 명령 사용 가능 여부를 확인하세요.');
+
+       addConnectionResult('최근 24시간 Windows 경고·오류', connectionStatus?.windowsEvents, (subsection, state) => {
+         const list = document.createElement('dl');
+         list.className = 'identity';
+         for (const log of Array.isArray(state.logs) ? state.logs : []) {
+           if (!isRecord(log) || !['System', 'Application'].includes(log.logName)
+             || !Number.isSafeInteger(log.warningCount) || !Number.isSafeInteger(log.errorCount)) continue;
+           addPair(list, log.logName, '경고 ' + log.warningCount.toLocaleString('ko-KR') + '건 · 오류 '
+             + log.errorCount.toLocaleString('ko-KR') + '건');
+         }
+         subsection.append(list);
+         addMessage(subsection, '이 건수는 이벤트 로그의 개수이며 보안 위협 탐지 결과가 아닙니다. 이벤트 세부 내용은 표시하지 않습니다.', 'muted');
+       }, 'Windows 이벤트 로그를 읽지 못했습니다. 로그 접근 권한과 System·Application 로그 상태를 확인하세요.');
+
+       const sdpStatus = document.createElement('p');
+       sdpStatus.className = 'muted';
+       sdpStatus.textContent = 'SDP 연결 상태: 이 로컬 OS 진단은 SDP 연결 여부를 확인하지 않습니다. 외부 시스템 연결 상태와 별도로 확인하세요.';
+       connectionSection.append(sdpStatus);
+       root.append(connectionSection);
+
        const readiness = document.createElement('section');
        readiness.className = 'notice student-readiness';
        const readinessHeading = document.createElement('h4');
