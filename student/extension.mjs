@@ -485,6 +485,11 @@
        const heading = document.createElement('h3');
        heading.textContent = '최근 보안 기록';
        root.append(heading);
+       appendSource(root, { status, mode });
+       const timelineGuide = document.createElement('p');
+       timelineGuide.className = 'notice';
+       timelineGuide.textContent = '기록은 최신순입니다. 필터로 찾고 상세 버튼을 누르면 근거 → 규칙 → 기록 당시 상태를 확인할 수 있습니다. 기록 시각(at)은 조회 시각이나 현재 상태가 아닙니다.';
+       root.append(timelineGuide, examplePanel('events'));
 
        const modeLabel = typeof mode === 'string' && Object.hasOwn(modeLabels, mode)
          ? modeLabels[mode]
@@ -581,6 +586,10 @@
        listContainer.className = 'student-event-list';
        const detailContainer = document.createElement('div');
        detailContainer.className = 'student-event-detail';
+       detailContainer.id = 'student-event-detail-panel';
+       detailContainer.setAttribute('role', 'region');
+       detailContainer.setAttribute('aria-label', '선택한 기록의 근거·규칙·기록 당시 상태');
+       detailContainer.setAttribute('aria-live', 'polite');
        root.append(filterGroup, listContainer, detailContainer);
 
        function makeFilter(labelText, id, key, values, optionLabel) {
@@ -655,6 +664,7 @@
          const title = document.createElement('h3');
          title.textContent = eventId + ' 상세';
          detail.append(title);
+         appendSource(detail, { status, mode });
 
          const identity = document.createElement('dl');
          identity.className = 'kv';
@@ -727,8 +737,9 @@
            return;
          }
 
-         const list = document.createElement('ul');
+         const list = document.createElement('ol');
          list.className = 'records';
+         list.setAttribute('aria-label', '최신순 보안 기록 타임라인');
          for (const event of visible) {
            const eventId = textValue(event.id, 'unknown');
            const row = document.createElement('li');
@@ -745,6 +756,7 @@
              : '확인 불가 (' + textValue(event.kind, 'unknown') + ')';
            addPair(details, '사건 ID', eventId);
            addPair(details, '시각', timeValue(event.at));
+           addPair(details, '원본 기록 시각(at)', textValue(event.at, '기록 시각 확인 불가'));
            addPair(details, '종류', kind);
            addPair(details, '앱', textValue(event.appId, '앱을 확인할 수 없음(appId 없음)'));
            addPair(details, '요약', textValue(event.summary, '요약을 확인할 수 없음'));
@@ -758,6 +770,7 @@
            button.textContent = eventId + ' 상세';
            button.setAttribute('aria-label', eventId + ' 상세');
            button.setAttribute('aria-expanded', selectedEventId === eventId ? 'true' : 'false');
+           button.setAttribute('aria-controls', detailContainer.id);
            button.addEventListener('click', () => {
              selectedEventId = selectedEventId === eventId ? null : eventId;
              renderList();
