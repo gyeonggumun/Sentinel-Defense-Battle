@@ -3,6 +3,80 @@
  // 제공 UI를 받은 것만으로 단계 완료를 인정하지 않습니다.
  export function createStudentView() {
    let menuTabNavigationInstalled = false;
+
+   function describeSource(resource, fallbackMode, local = false) {
+     const current = resource !== null && typeof resource === 'object' && !Array.isArray(resource) ? resource : {};
+     const mode = current.mode ?? fallbackMode;
+     const requests = {
+       idle: '아직 요청 전(idle)',
+       loading: '조회 중(loading)',
+       error: '조회 실패(error)',
+       ok: '응답 수신(ok)',
+     };
+     let origin = 'unverified';
+     let source = '자료 출처 확인 불가';
+     if (local) {
+       source = current.status === 'ok' ? '로컬 앱 서버의 진단 응답' : '로컬 진단 응답 미확인';
+       origin = current.status === 'ok' ? 'local' : 'unavailable';
+     } else if (mode === 'demo') {
+       source = '예시 자료(demo) · 실제 조회 결과가 아님';
+       origin = 'example';
+     } else if (current.status !== 'ok') {
+       source = '현재 표시할 실제 조회 자료 없음';
+       origin = 'unavailable';
+     } else if (mode === 'connected') {
+       source = '연동 시스템의 실제 조회 응답 · 이 PC의 센서 실측값과 다름';
+       origin = 'connected';
+     }
+     const suppliedTime = current.status === 'ok' ? current.checkedAt ?? current.data?.checkedAt : null;
+     const checkedAt = typeof suppliedTime === 'string' && Number.isFinite(Date.parse(suppliedTime))
+       ? suppliedTime : '전달되지 않음';
+     return {
+       origin,
+       source,
+       checkedAt,
+       request: typeof current.status === 'string' && Object.hasOwn(requests, current.status)
+         ? requests[current.status] : '요청 상태 확인 불가',
+     };
+   }
+
+   function appendSource(parent, resource, fallbackMode, local = false) {
+     const source = describeSource(resource, fallbackMode, local);
+     const note = document.createElement('p');
+     note.className = 'muted student-source-note';
+     note.setAttribute('data-sentinel-origin', source.origin);
+     note.textContent = '자료 출처: ' + source.source + ' · ' + source.request
+       + ' · 원천 조회 시각: ' + source.checkedAt;
+     parent.append(note);
+   }
+
+   function examplePanel(kind) {
+     const panel = document.createElement('details');
+     panel.className = 'notice student-example';
+     panel.setAttribute('data-sentinel-origin', 'example');
+     const summary = document.createElement('summary');
+     summary.textContent = kind === 'events'
+       ? '예시 타임라인 보기 · 실제 기록이 아닙니다'
+       : '예시 상태 보기 · 실제 조회 결과가 아닙니다';
+     const note = document.createElement('p');
+     note.textContent = '설명용 가정만 표시합니다. 실제 조회 결과를 대체하지 않으며, 통계·근거 인용·조치 요청에 사용하지 않습니다. 예시의 원천 조회 시각은 없습니다.';
+     const list = document.createElement('ol');
+     const examples = kind === 'events' ? [
+       '예시 사건 A — 세션이 만료됐다는 가정. 예시 근거 E1: 만료 관측이라는 설명. 실제 사건 ID·근거 ID가 아닙니다.',
+       '예시 사건 B — 기기 상태를 확인하지 못했다는 가정. unknown은 확인 불가이며 정상·안전으로 바꾸지 않습니다.',
+     ] : [
+       '예시 기기 — 보안 기준 충족(compliant)이라는 가정. 이 PC를 검사한 결과가 아닙니다.',
+       '예시 세션 — 확인 불가(unknown)라는 가정. 정상·안전이라는 뜻이 아닙니다.',
+     ];
+     for (const value of examples) {
+       const item = document.createElement('li');
+       item.textContent = value;
+       list.append(item);
+     }
+     panel.append(summary, note, list);
+     return panel;
+   }
+
    return {
      renderIdentity({ me, devices, sessions } = {}) {
        const root = document.createElement('div');
@@ -69,6 +143,35 @@
 
        root.className = 'student-identity-view';
 
+       const dashboardHeading = document.createElement('h2');
+       dashboardHeading.textContent = '센티넬 · 보호 현황 요약';
+       const clock = document.createElement('p');
+       clock.className = 'muted';
+       clock.setAttribute('data-sentinel-origin', 'local-clock');
+       clock.textContent = '이 PC의 화면 생성 시각(KST): '
+         + new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
+         + ' · 원천 조회 시각이나 보안 측정값이 아닙니다. CPU·메모리·디스크는 이 화면에서 측정하지 않습니다.';
+       const overview = document.createElement('div');
+       overview.className = 'grid-2 student-protection-overview';
+       for (const [title, resource] of [['계정', me], ['등록 기기', devices], ['현재 세션', sessions]]) {
+         const card = document.createElement('section');
+         card.className = 'card';
+         const titleNode = document.createElement('h3');
+         titleNode.textContent = title;
+         const state = document.createElement('p');
+         state.setAttribute('role', 'status');
+         state.textContent = describeSource(resource).request;
+         card.append(titleNode, state);
+         if (resource?.status === 'ok' && Array.isArray(resource.data)) {
+           const count = document.createElement('p');
+           count.textContent = '응답에 포함된 항목: ' + resource.data.length + '개';
+           card.append(count);
+         }
+         appendSource(card, resource);
+         overview.append(card);
+       }
+       root.append(dashboardHeading, clock, overview, examplePanel('protection'));
+
        const modeLabels = {
          connected: '연결됨',
          demo: '예제 자료(demo) · 실제 연결 아님',
@@ -128,6 +231,7 @@
          mode.className = 'muted';
          mode.textContent = `연결 상태: ${modeLabel}`;
          section.append(mode);
+         appendSource(section, current);
 
          if (current.status === 'loading') {
            const message = document.createElement('p');
