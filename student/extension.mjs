@@ -824,6 +824,91 @@
        connection.textContent = '데이터 연결 상태: ' + modeText(mode);
        root.append(connection);
 
+       const pcSection = document.createElement('section');
+       pcSection.className = 'student-status-resource';
+       const pcHeading = document.createElement('h4');
+       pcHeading.textContent = '내 PC 상태';
+       pcSection.append(pcHeading);
+       const pcStatus = diagnostics?.status === 'ok' && isRecord(diagnostics.data)
+         && isRecord(diagnostics.data.pcStatus) && diagnostics.data.pcStatus.origin === 'local-os'
+         ? diagnostics.data.pcStatus : null;
+       const pcTimestamp = typeof pcStatus?.checkedAt === 'string' && Number.isFinite(Date.parse(pcStatus.checkedAt))
+         ? new Date(pcStatus.checkedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })
+         : '확인 불가';
+       const pcSource = document.createElement('p');
+       pcSource.className = 'muted';
+       pcSource.textContent = pcStatus
+         ? '실측 출처: 이 앱 서버가 실행 중인 로컬 PC 운영체제 · CPU 500ms 표본 · 디스크는 프로젝트 폴더가 있는 볼륨의 여유 공간'
+         : '실측 출처를 확인할 수 없습니다. 브라우저 추정값이나 예시 값으로 대체하지 않습니다.';
+       const pcTime = document.createElement('p');
+       pcTime.className = 'muted';
+       pcTime.textContent = '측정 시각(KST): ' + pcTimestamp;
+       pcSection.append(pcSource, pcTime);
+
+       const pcMessage = document.createElement('p');
+       pcMessage.setAttribute('role', 'status');
+       if (diagnostics?.status === 'loading') pcMessage.textContent = '로컬 PC 상태를 측정하고 있습니다…';
+       else if (diagnostics?.status === 'error') pcMessage.textContent = '로컬 PC 상태를 측정하지 못했습니다. 아래 오류와 도움정보 조회 상태를 확인하세요.';
+       else if (diagnostics?.status !== 'ok') pcMessage.textContent = '실측값은 아직 조회하지 않았습니다. 제공 화면의 「도움정보 불러오기」를 눌러 확인하세요.';
+       else if (!pcStatus) pcMessage.textContent = '서버 응답에 확인 가능한 로컬 PC 실측 자료가 없습니다.';
+       else if (pcStatus.status !== 'ok') pcMessage.textContent = '일부 PC 지표를 측정하지 못했습니다. 지표별 상태를 확인하세요.';
+       else pcMessage.textContent = '로컬 PC 실측값을 확인했습니다. 외부 보안 시스템 연결 상태와는 별개입니다.';
+       pcSection.append(pcMessage);
+
+       function addPcMetric(list, label, metric, percentKey, amountText) {
+         const term = document.createElement('dt');
+         term.textContent = label;
+         const detail = document.createElement('dd');
+         const validPercent = isRecord(metric) && metric.status === 'ok'
+           && typeof metric[percentKey] === 'number' && Number.isFinite(metric[percentKey])
+           && metric[percentKey] >= 0 && metric[percentKey] <= 100;
+         if (!validPercent) {
+           const code = isRecord(metric) && typeof metric.code === 'string'
+             && /^[A-Z0-9_]{1,80}$/.test(metric.code) ? ' (' + metric.code + ')' : '';
+           detail.textContent = '측정 불가' + code;
+         } else {
+           const percent = metric[percentKey];
+           detail.textContent = percent.toLocaleString('ko-KR', { maximumFractionDigits: 1 }) + '%'
+             + (typeof amountText === 'function' ? ' · ' + amountText(metric) : '');
+           const meter = document.createElement('meter');
+           meter.min = 0;
+           meter.max = 100;
+           meter.value = percent;
+           meter.setAttribute('aria-label', label);
+           detail.append(meter);
+         }
+         list.append(term, detail);
+       }
+
+       const metrics = document.createElement('dl');
+       metrics.className = 'identity';
+       const formatGiB = (bytes) => (bytes / (1024 ** 3)).toLocaleString('ko-KR', { maximumFractionDigits: 1 }) + ' GiB';
+       const validBytes = (value) => Number.isSafeInteger(value) && value >= 0;
+       const memoryText = (metric) => validBytes(metric.totalBytes) && validBytes(metric.availableBytes)
+         && metric.availableBytes <= metric.totalBytes
+         ? formatGiB(metric.totalBytes - metric.availableBytes) + ' 사용 / ' + formatGiB(metric.totalBytes) + ' 전체'
+         : '메모리 용량을 확인할 수 없음';
+       const diskText = (metric) => validBytes(metric.totalBytes) && validBytes(metric.availableBytes)
+         && metric.availableBytes <= metric.totalBytes
+         ? formatGiB(metric.availableBytes) + ' 남음 / ' + formatGiB(metric.totalBytes) + ' 전체'
+         : '볼륨 용량을 확인할 수 없음';
+       addPcMetric(metrics, 'CPU 사용률', pcStatus?.cpu, 'usagePercent', metric =>
+         metric.sampleMs === 500 ? '500ms 표본' : '표본 간격 확인 불가');
+       addPcMetric(metrics, '메모리 사용량', pcStatus?.memory, 'usagePercent', memoryText);
+       addPcMetric(metrics, '디스크 남은 공간', pcStatus?.disk, 'freePercent', diskText);
+       pcSection.append(metrics);
+
+       const pcExample = document.createElement('details');
+       pcExample.className = 'notice student-example';
+       pcExample.setAttribute('data-sentinel-origin', 'example');
+       const pcExampleTitle = document.createElement('summary');
+       pcExampleTitle.textContent = '예시 값 보기 · 설명용 숫자이며 실측값이 아닙니다';
+       const pcExampleText = document.createElement('p');
+       pcExampleText.textContent = '예시: CPU 32%, 메모리 58%, 디스크 남은 공간 9%. 이 고정 예시는 이 PC에서 조회한 값이나 측정 시각이 아니며, 위 실측 지표를 대신하지 않습니다.';
+       pcExample.append(pcExampleTitle, pcExampleText);
+       pcSection.append(pcExample);
+       root.append(pcSection);
+
        const readiness = document.createElement('section');
        readiness.className = 'notice student-readiness';
        const readinessHeading = document.createElement('h4');
@@ -853,7 +938,7 @@
        const command = document.createElement('pre');
        command.textContent = 'npm start';
        const launchNote = document.createElement('p');
-       launchNote.textContent = '제공 실행 도구가 OneDrive의 ReparsePoint 속성 때문에 중단되는 경우에도 npm start는 같은 src/server.mjs를 실행합니다. 이 화면은 설치·권한 변경·서버 실행·유료 AI·조치 요청을 자동으로 수행하지 않습니다. CPU·메모리·디스크 측정도 수행하지 않습니다.';
+       launchNote.textContent = '제공 실행 도구가 OneDrive의 ReparsePoint 속성 때문에 중단되는 경우에도 npm start는 같은 src/server.mjs를 실행합니다. 이 화면은 설치·권한 변경·서버 실행·유료 AI·조치 요청을 자동으로 수행하지 않습니다. PC 실측은 「도움정보 불러오기」를 직접 누를 때 로컬 서버에서 읽습니다.';
        const copyCommand = document.createElement('button');
        copyCommand.type = 'button';
        copyCommand.className = 'btn';

@@ -1,10 +1,11 @@
 import http from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {readFile,statfs} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {types} from 'node:util';
+import {cpus,freemem,totalmem} from 'node:os';
 import {createActionService} from './actions/service.mjs';
 import {createSdpActionConfiguration} from './actions/sdp-action-engine.mjs';
 import {readActionStartupConfiguration} from './actions/action-startup-config.mjs';
@@ -21,6 +22,42 @@ import {nativeOwn,nativePublicError} from './connection/native-login.mjs';
 import {createNativeHostContext,captureNativeHostConfiguration,readNativeHostConfiguration,openNativeHostOperation,readNativeHostOperation,assertNativeHostOperation,createNativeOperationVault,closeNativeHostOperation} from './connection/native-context.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
+const pcCpuSampleMs=500;
+function cpuTimeSnapshot(){
+  const processors=cpus();if(processors.length===0)return null;
+  let total=0,idle=0;
+  for(const processor of processors){
+    for(const [name,value] of Object.entries(processor.times)){
+      if(!Number.isFinite(value)||value<0)return null;
+      total+=value;if(name==='idle')idle+=value;
+    }
+  }
+  return Number.isFinite(total)&&Number.isFinite(idle)?{total,idle}:null;
+}
+async function readLocalPcStatus(clock){
+  let cpu={status:'unavailable',code:'CPU_SAMPLE_UNAVAILABLE'};
+  try{
+    const before=cpuTimeSnapshot();await new Promise(resolve=>setTimeout(resolve,pcCpuSampleMs));const after=cpuTimeSnapshot();
+    if(before&&after){
+      const total=after.total-before.total,idle=after.idle-before.idle,busy=total-idle;
+      if(total>0&&idle>=0&&idle<=total&&busy>=0&&busy<=total)cpu={status:'ok',usagePercent:Math.round(busy/total*1000)/10,sampleMs:pcCpuSampleMs};
+    }
+  }catch{}
+  let memory={status:'unavailable',code:'MEMORY_SAMPLE_UNAVAILABLE'};
+  try{
+    const totalBytes=totalmem(),availableBytes=freemem();
+    if(Number.isSafeInteger(totalBytes)&&totalBytes>0&&Number.isSafeInteger(availableBytes)&&availableBytes>=0&&availableBytes<=totalBytes)
+      memory={status:'ok',totalBytes,availableBytes,usagePercent:Math.round((totalBytes-availableBytes)/totalBytes*1000)/10};
+  }catch{}
+  let disk={status:'unavailable',code:'DISK_SAMPLE_UNAVAILABLE'};
+  try{
+    const filesystem=await statfs(root),totalBytes=filesystem.blocks*filesystem.bsize,availableBytes=filesystem.bavail*filesystem.bsize;
+    if(Number.isSafeInteger(totalBytes)&&totalBytes>0&&Number.isSafeInteger(availableBytes)&&availableBytes>=0&&availableBytes<=totalBytes)
+      disk={status:'ok',totalBytes,availableBytes,freePercent:Math.round(availableBytes/totalBytes*1000)/10};
+  }catch{}
+  const checkedAt=clock().toISOString();
+  return {origin:'local-os',status:[cpu,memory,disk].every(metric=>metric.status==='ok')?'ok':'partial',checkedAt,cpu,memory,disk};
+}
 const id=value=>typeof value==='string'&&/^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/.test(value);
 const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const text=value=>typeof value==='string'&&value.length<=2000;
@@ -682,10 +719,12 @@ export function createOnServer(serverOptions={}) {
         }finally{closeNativeHostOperation(nativeOperation);}
       }
       if(req.method==='GET'&&url.pathname==='/api/diagnostics'){
-        // 자동 호출이나 비밀 원문·전체 설정 출력 없이 로컬 연결 상태만 진단한다.
+        // 학생이 누른 도움정보 조회에서 외부 연결 진단과 별도로 이 PC의 OS 자원만 측정한다.
         const info=(mappedAi??defaultAi).connectionInfo();
+        const pcStatus=await readLocalPcStatus(clock);
+        assertAlive();
         send(200,{ok:true,data:{requestId,component:'on-client',version:'0.1.0',engine:{mode,code:mode==='disconnected'?'ENGINE_NOT_CONNECTED':mode==='demo'?'DEMO_ONLY':'ADAPTER_CONFIGURED'},
-          ai:{configured:info?.configured===true,authorized:false,authorizationRequired:true},checkedAt:clock().toISOString(),workbenchRequiredAtRuntime:false}});return;
+          ai:{configured:info?.configured===true,authorized:false,authorizationRequired:true},checkedAt:pcStatus.checkedAt,workbenchRequiredAtRuntime:false,pcStatus}});return;
       }
       if(req.method==='GET'&&url.pathname==='/api/vulnerabilities'){
         const data=await bounded(signal=>scanner.scan({signal}));send(200,{ok:true,data});
