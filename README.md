@@ -6,11 +6,17 @@
 
 ## 켜기
 
-검수 환경은 Node.js 24.19.0이며 외부 npm 의존성이 없습니다. 이 폴더의 PowerShell에서 아래를 실행하고 PC 브라우저로 http://127.0.0.1:5189 를 엽니다. 자세한 켜기·끄기·다시 켜기는 docs/STUDENT_LAUNCH_GUIDE.md에 있습니다.
+검수 기준 Node.js는 `package.json`에 적힌 24.19.0이며 외부 npm 의존성은 없습니다. PowerShell을 `package.json`이 있는 저장소 최상위 폴더에서 열고 다음을 실행합니다.
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\start-alekov.ps1
+```powershell
+node --version
+npm run check
+npm start
+```
 
-npm start도 같은 서버를 켭니다. 기본 실행은 실제 회사 시스템(기존 엔진)에 연결되지 않은 상태입니다. npm run demo는 예제 자료로 화면을 보여 줄 뿐이며 실제 연결이나 성취가 아닙니다. npm run check는 student/extension.mjs의 문법만 확인합니다.
+`npm start`는 `node src/server.mjs`를 실행합니다. 터미널에 `케셰브 연결 확인: http://127.0.0.1:5189`가 나오면 로컬 서버가 시작된 것입니다. 브라우저에서 <http://127.0.0.1:5189/>를 엽니다. 이 문구만으로 SDP·XDR 또는 AI 연결을 확인한 것은 아닙니다. 종료는 같은 PowerShell 창에서 `Ctrl+C`, 재실행은 위 명령입니다. 다른 포트를 쓸 때는 새 PowerShell 창에서 `$env:ON_PORT='5190'; npm start`를 실행하고 `http://127.0.0.1:5190/`을 엽니다.
+
+OneDrive 동기화·바로가기 경로에서 `tools/start-alekov.ps1`이 `ReparsePoint` 오류로 중단되면 프로젝트를 옮기지 말고 `npm start`를 사용합니다. 이 시작 도구는 해당 경로를 의도적으로 거부합니다. `npm run check`는 학생 화면 파일의 문법만 확인합니다. `npm run demo`는 업무 기록의 예시 자료를 사용하며 실제 시스템 연결은 아닙니다. 도움정보의 로컬 PC 지표는 각 항목의 출처를 확인하세요. 자세한 실행·복구 순서는 [학생 실행 안내](docs/STUDENT_LAUNCH_GUIDE.md)에 있습니다.
 
 ## 지킬 것
 
