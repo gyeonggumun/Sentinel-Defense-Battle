@@ -824,6 +824,56 @@
        connection.textContent = '데이터 연결 상태: ' + modeText(mode);
        root.append(connection);
 
+       const readiness = document.createElement('section');
+       readiness.className = 'notice student-readiness';
+       const readinessHeading = document.createElement('h4');
+       readinessHeading.textContent = '실행·연결 자가진단';
+       const steps = document.createElement('ol');
+       const engineMode = diagnostics?.status === 'ok' ? diagnostics.data?.engine?.mode : mode;
+       const diagnosis = diagnostics?.status === 'ok'
+         ? '로컬 진단 응답을 받았습니다. 외부 시스템 연결 성공과는 별개입니다.'
+         : diagnostics?.status === 'loading' ? '로컬 진단 조회 중입니다.'
+           : diagnostics?.status === 'error' ? '로컬 진단 조회에 실패했습니다. 아래 오류를 확인하고 직접 다시 조회하세요.'
+             : '로컬 진단은 아직 미확인입니다. 제공 화면의 「도움정보 불러오기」를 누르세요.';
+       const external = engineMode === 'connected'
+         ? '연결 모드(connected)입니다. 실제 계정·기기·세션의 개별 조회 결과를 확인해야 합니다.'
+         : engineMode === 'demo' ? '예시 모드(demo)입니다. 실제 시스템 연결이 아닙니다.'
+           : engineMode === 'disconnected' ? '외부 시스템 연결 없음(disconnected)입니다. 담당자의 연결 준비가 필요합니다.'
+             : '외부 시스템 연결을 확인할 수 없습니다(unknown). 정상으로 간주하지 마세요.';
+       for (const text of ['학생 화면 코드가 실행됐습니다. 이것만으로 외부 연결이 확인되지는 않습니다.', diagnosis, external]) {
+         const item = document.createElement('li');
+         item.textContent = text;
+         steps.append(item);
+       }
+       const guide = document.createElement('details');
+       const guideTitle = document.createElement('summary');
+       guideTitle.textContent = '같은 폴더에서 다시 실행·확인하는 순서';
+       const instructions = document.createElement('p');
+       instructions.textContent = '이미 앱이 실행 중이면 중복 실행하지 마세요. package.json이 있는 기존 프로젝트 폴더에서 PowerShell을 열고 아래 명령을 실행한 뒤 http://127.0.0.1:5189/를 여세요. 메뉴 이동 → 도움정보 불러오기 → 각 자료의 출처·시각·오류를 확인합니다. 직접 실행한 창의 Ctrl+C로 종료한 뒤 같은 명령으로 다시 실행합니다.';
+       const command = document.createElement('pre');
+       command.textContent = 'npm start';
+       const launchNote = document.createElement('p');
+       launchNote.textContent = '제공 실행 도구가 OneDrive의 ReparsePoint 속성 때문에 중단되는 경우에도 npm start는 같은 src/server.mjs를 실행합니다. 이 화면은 설치·권한 변경·서버 실행·유료 AI·조치 요청을 자동으로 수행하지 않습니다. CPU·메모리·디스크 측정도 수행하지 않습니다.';
+       const copyCommand = document.createElement('button');
+       copyCommand.type = 'button';
+       copyCommand.className = 'btn';
+       copyCommand.textContent = '실행 명령 복사';
+       const copied = document.createElement('p');
+       copied.setAttribute('role', 'status');
+       copyCommand.addEventListener('click', async () => {
+         try {
+           const clipboard = globalThis.navigator?.clipboard;
+           if (!clipboard || typeof clipboard.writeText !== 'function') throw new Error('clipboard_unavailable');
+           await clipboard.writeText('npm start');
+           copied.textContent = '실행 명령을 복사했습니다. 프로젝트 폴더의 PowerShell에 붙여 넣으세요. 자동 실행하지 않습니다.';
+         } catch {
+           copied.textContent = '명령을 복사하지 못했습니다. 위의 npm start를 직접 입력하세요.';
+         }
+       });
+       guide.append(guideTitle, instructions, command, launchNote, copyCommand, copied);
+       readiness.append(readinessHeading, steps, guide);
+       root.append(readiness);
+
        function addMessage(parent, text, className = 'state state-empty', role = 'status') {
          const message = document.createElement('p');
          message.className = className;
@@ -874,6 +924,7 @@
            scope.textContent = '현재 검증된 연결 한 개를 표시합니다. 지난 세션 목록이 아닙니다.';
            section.append(scope);
          }
+         appendSource(section, state, mode);
 
          if (state.status === 'loading') {
            addMessage(section, title + ' 정보를 불러오는 중입니다…', 'state state-loading');
@@ -945,6 +996,7 @@
          section.append(modeNote);
 
          let safeFields = null;
+         appendSource(section, state, mode, true);
          if (state.status === 'loading') {
            addMessage(section, '진단 정보를 불러오는 중입니다…', 'state state-loading');
          } else if (state.status === 'error') {
