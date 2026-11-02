@@ -855,10 +855,124 @@
        else pcMessage.textContent = '로컬 PC 실측값을 확인했습니다. 외부 보안 시스템 연결 상태와는 별개입니다.';
        pcSection.append(pcMessage);
 
+       const chartRows = [
+         { label: 'CPU 사용률', metric: pcStatus?.cpu, key: 'usagePercent', color: 'var(--accent)' },
+         { label: '메모리 사용량', metric: pcStatus?.memory, key: 'usagePercent', color: 'var(--student)' },
+         { label: '디스크 여유', metric: pcStatus?.disk, key: 'freePercent', color: 'var(--allow)' },
+       ].map((item) => ({
+         ...item,
+         value: isRecord(item.metric) && item.metric.status === 'ok'
+           && typeof item.metric[item.key] === 'number' && Number.isFinite(item.metric[item.key])
+           && item.metric[item.key] >= 0 && item.metric[item.key] <= 100
+           ? item.metric[item.key] : null,
+       }));
+       const hasChartValue = chartRows.some(item => item.value !== null);
+       const chart = document.createElement('figure');
+       chart.className = 'student-pc-chart';
+       chart.style.margin = '14px 0';
+       chart.style.padding = '14px';
+       chart.style.border = '1px solid var(--border)';
+       chart.style.borderRadius = '12px';
+       chart.style.background = 'var(--surface)';
+       const chartCaption = document.createElement('figcaption');
+       chartCaption.textContent = '현재 PC 자원 비율';
+       chartCaption.style.fontWeight = '600';
+       chartCaption.style.marginBottom = '4px';
+       const chartNote = document.createElement('p');
+       chartNote.className = 'muted';
+       chartNote.textContent = hasChartValue
+         ? '조회 시점의 단일 측정값입니다. 시간에 따른 변화 그래프가 아니며, 디스크는 사용량이 아닌 남은 공간입니다.'
+         : '확인 가능한 실측값이 없습니다. 예시값은 그래프에 사용하지 않습니다.';
+       chartNote.style.margin = '0 0 10px';
+       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+       svg.setAttribute('viewBox', '0 0 560 178');
+       svg.setAttribute('width', '560');
+       svg.setAttribute('height', '178');
+       svg.setAttribute('role', 'img');
+       svg.setAttribute('aria-label', '현재 PC 자원 비율 그래프: ' + chartRows.map(item =>
+         item.label + ' ' + (item.value === null ? '측정 불가' : item.value.toLocaleString('ko-KR', { maximumFractionDigits: 1 }) + '%'),
+       ).join(', '));
+       svg.style.display = 'block';
+       svg.style.width = '100%';
+       svg.style.height = 'auto';
+       svg.style.fontFamily = 'inherit';
+       const plotX = 132;
+       const plotWidth = 318;
+       for (const tick of [0, 25, 50, 75, 100]) {
+         const x = plotX + plotWidth * tick / 100;
+         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+         line.setAttribute('x1', String(x));
+         line.setAttribute('x2', String(x));
+         line.setAttribute('y1', '16');
+         line.setAttribute('y2', '142');
+         line.setAttribute('stroke', 'var(--border)');
+         line.setAttribute('stroke-dasharray', '3 4');
+         svg.append(line);
+         const tickLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+         tickLabel.setAttribute('x', String(x));
+         tickLabel.setAttribute('y', '168');
+         tickLabel.setAttribute('text-anchor', 'middle');
+         tickLabel.setAttribute('font-size', '12');
+         tickLabel.setAttribute('fill', 'var(--muted)');
+         tickLabel.textContent = tick + '%';
+         svg.append(tickLabel);
+       }
+       chartRows.forEach((item, index) => {
+         const centerY = 34 + index * 42;
+         const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+         label.setAttribute('x', '0');
+         label.setAttribute('y', String(centerY + 5));
+         label.setAttribute('font-size', '13');
+         label.setAttribute('fill', 'var(--text)');
+         label.textContent = item.label;
+         svg.append(label);
+         if (item.value !== null) {
+           const track = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+           track.setAttribute('x', String(plotX));
+           track.setAttribute('y', String(centerY - 8));
+           track.setAttribute('width', String(plotWidth));
+           track.setAttribute('height', '16');
+           track.setAttribute('rx', '8');
+           track.setAttribute('fill', 'var(--accent-soft)');
+           svg.append(track);
+           const bar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+           bar.setAttribute('x', String(plotX));
+           bar.setAttribute('y', String(centerY - 8));
+           bar.setAttribute('width', String(plotWidth * item.value / 100));
+           bar.setAttribute('height', '16');
+           bar.setAttribute('rx', '8');
+           bar.setAttribute('fill', item.color);
+           svg.append(bar);
+         }
+         const valueLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+         valueLabel.setAttribute('x', '466');
+         valueLabel.setAttribute('y', String(centerY + 5));
+         valueLabel.setAttribute('font-size', '13');
+         valueLabel.setAttribute('font-weight', '600');
+         valueLabel.setAttribute('fill', item.value === null ? 'var(--muted)' : 'var(--text)');
+         valueLabel.textContent = item.value === null
+           ? '측정 불가' : item.value.toLocaleString('ko-KR', { maximumFractionDigits: 1 }) + '%';
+         svg.append(valueLabel);
+       });
+       chart.append(chartCaption, chartNote, svg);
+       pcSection.append(chart);
+
        function addPcMetric(list, label, metric, percentKey, amountText) {
+         const card = document.createElement('div');
+         card.className = 'student-pc-metric';
+         card.style.minWidth = '0';
+         card.style.padding = '12px';
+         card.style.border = '1px solid var(--border)';
+         card.style.borderRadius = '10px';
+         card.style.background = 'var(--surface)';
          const term = document.createElement('dt');
          term.textContent = label;
+         term.style.fontWeight = '600';
+         term.style.marginBottom = '4px';
          const detail = document.createElement('dd');
+         detail.style.fontSize = '1.05rem';
+         detail.style.fontWeight = '600';
+         detail.style.overflowWrap = 'anywhere';
          const validPercent = isRecord(metric) && metric.status === 'ok'
            && typeof metric[percentKey] === 'number' && Number.isFinite(metric[percentKey])
            && metric[percentKey] >= 0 && metric[percentKey] <= 100;
@@ -875,13 +989,20 @@
            meter.max = 100;
            meter.value = percent;
            meter.setAttribute('aria-label', label);
+           meter.style.display = 'block';
+           meter.style.width = '100%';
+           meter.style.marginTop = '8px';
            detail.append(meter);
          }
-         list.append(term, detail);
+         card.append(term, detail);
+         list.append(card);
        }
 
        const metrics = document.createElement('dl');
        metrics.className = 'identity';
+       metrics.style.gridTemplateColumns = 'repeat(auto-fit, minmax(180px, 1fr))';
+       metrics.style.gap = '10px';
+       metrics.style.margin = '12px 0 0';
        const formatGiB = (bytes) => (bytes / (1024 ** 3)).toLocaleString('ko-KR', { maximumFractionDigits: 1 }) + ' GiB';
        const validBytes = (value) => Number.isSafeInteger(value) && value >= 0;
        const memoryText = (metric) => validBytes(metric.totalBytes) && validBytes(metric.availableBytes)
